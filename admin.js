@@ -28,13 +28,12 @@ function isAdmin(ctx) {
   return ADMIN_ID && String(ctx.from?.id) === String(ADMIN_ID);
 }
 
-// ── Admin panel message ───────────────────────────────────────────────────────
+// ── Panel builder ─────────────────────────────────────────────────────────────
 
 function buildPanel() {
   const s     = db.getStats();
   const lines = [`👥 *Total Users:* ${s.totalUsers}`];
 
-  // List users (max 20 to avoid huge messages)
   const userList = Object.values(s.users).slice(0, 20);
   userList.forEach((u, i) => {
     const uname = u.username ? `@${escMd(u.username)}` : escMd(u.firstName);
@@ -53,62 +52,46 @@ function buildPanel() {
   return lines.join('\n');
 }
 
-// ── Broadcast state (in-memory) ───────────────────────────────────────────────
+const ADMIN_KB = () => Markup.inlineKeyboard([
+  [Markup.button.callback('📣 Broadcast', 'admin_broadcast')],
+  [Markup.button.callback('🔄 Refresh',   'admin_refresh')],
+]);
 
-const broadcastState = new Map(); // userId → true (waiting for broadcast message)
+// ── Broadcast state ───────────────────────────────────────────────────────────
 
-// ── Register admin handlers ───────────────────────────────────────────────────
+const broadcastState = new Map();
+
+// ── Register handlers ─────────────────────────────────────────────────────────
 
 function registerAdmin(bot) {
 
-  // /admin command
   bot.command('admin', async (ctx) => {
-    if (!isAdmin(ctx)) {
-      return ctx.reply('⛔ You are not authorised to use this command.');
-    }
-
-    const panel = buildPanel();
-    await ctx.replyWithMarkdownV2(
-      `🛠️ *Admin Panel*\n\n${panel}`,
-      Markup.inlineKeyboard([
-        [Markup.button.callback('📣 Broadcast', 'admin_broadcast')],
-        [Markup.button.callback('🔄 Refresh',   'admin_refresh')],
-      ])
-    );
+    if (!isAdmin(ctx)) return ctx.reply('⛔ You are not authorised to use this command.');
+    await ctx.replyWithMarkdownV2(`🛠️ *Admin Panel*\n\n${buildPanel()}`, ADMIN_KB());
   });
 
-  // Refresh panel
   bot.action('admin_refresh', async (ctx) => {
     if (!isAdmin(ctx)) return ctx.answerCbQuery('⛔ Not authorised.');
     await ctx.answerCbQuery('Refreshed ✅');
     try {
       await ctx.editMessageText(
         `🛠️ *Admin Panel*\n\n${buildPanel()}`,
-        {
-          parse_mode   : 'MarkdownV2',
-          reply_markup : Markup.inlineKeyboard([
-            [Markup.button.callback('📣 Broadcast', 'admin_broadcast')],
-            [Markup.button.callback('🔄 Refresh',   'admin_refresh')],
-          ]).reply_markup,
-        }
+        { parse_mode: 'MarkdownV2', reply_markup: ADMIN_KB().reply_markup }
       );
     } catch (_) {}
   });
 
-  // Broadcast prompt
   bot.action('admin_broadcast', async (ctx) => {
     if (!isAdmin(ctx)) return ctx.answerCbQuery('⛔ Not authorised.');
     await ctx.answerCbQuery();
     broadcastState.set(String(ctx.from.id), true);
     await ctx.reply('📣 Send the message you want to broadcast to all users:');
   });
-
-  // Broadcast execution (handled in main bot message pipeline — see bot.js)
 }
 
 /**
- * Called from bot.js to check & execute broadcast.
- * Returns true if the message was consumed as a broadcast.
+ * Called from bot.js inside the text handler.
+ * Returns true if the message was consumed as a broadcast command.
  */
 async function handleBroadcast(ctx, bot) {
   const uid = String(ctx.from?.id);
@@ -116,10 +99,10 @@ async function handleBroadcast(ctx, bot) {
 
   broadcastState.delete(uid);
 
-  const text  = ctx.message?.text;
+  const text = ctx.message?.text;
   if (!text) return false;
 
-  const users = db.getAllUsers();
+  const users     = db.getAllUsers();
   let sent = 0, failed = 0;
 
   const statusMsg = await ctx.reply(`📣 Broadcasting to ${users.length} users…`);
@@ -131,8 +114,7 @@ async function handleBroadcast(ctx, bot) {
     } catch (_) {
       failed++;
     }
-    // Slight throttle to respect Telegram rate limits
-    await new Promise(r => setTimeout(r, 35));
+    await new Promise(r => setTimeout(r, 35)); // rate-limit throttle
   }
 
   try {
