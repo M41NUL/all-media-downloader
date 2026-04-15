@@ -61,37 +61,116 @@ function ytdlpInfo(videoUrl) {
 }
 
 /**
- * Extract best video URL from yt-dlp info object.
- * Prefers formats without watermark (for TikTok).
+ * Extract best MP4 video URL from yt-dlp info object.
+ * ✅ Strictly filters: mp4 only, video+audio combined, no stream links.
  */
 function pickBestFormat(info) {
   if (!info) return null;
 
-  // Direct URL on the info object
+  // Direct URL (no formats array) — return as-is
   if (info.url && !info.formats) return info.url;
 
   const formats = info.formats || [];
 
-  // For TikTok: prefer format_id 'download' (no watermark) or 'hd' variants
+  // ── Priority 1: TikTok no-watermark mp4 (video+audio combined) ──────────
   const noWatermark = formats.find(f =>
-    f.format_id === 'download' ||
-    (f.format_note && /no.?watermark|nowm|hd/i.test(f.format_note))
+    (f.format_id === 'download' ||
+      /no.?watermark|nowm|hd/i.test(f.format_note || '')) &&
+    f.ext === 'mp4' &&
+    f.vcodec !== 'none' &&
+    f.acodec !== 'none' &&
+    f.url &&
+    !f.url.includes('.m3u8')
   );
   if (noWatermark?.url) return noWatermark.url;
 
-  // Best combined video+audio by resolution
+  // ── Priority 2: Best combined mp4 (video+audio, highest resolution) ──────
   const combined = formats
-    .filter(f => f.vcodec !== 'none' && f.acodec !== 'none' && f.url)
+    .filter(f =>
+      f.ext === 'mp4' &&
+      f.vcodec !== 'none' &&
+      f.acodec !== 'none' &&
+      f.url &&
+      !f.url.includes('.m3u8') &&   // ❌ stream বাদ
+      !f.url.includes('.webm')       // ❌ webm বাদ
+    )
     .sort((a, b) => (b.height || 0) - (a.height || 0));
+
   if (combined[0]?.url) return combined[0].url;
 
-  // Best video-only (fallback)
-  const videoOnly = formats
-    .filter(f => f.vcodec !== 'none' && f.url)
-    .sort((a, b) => (b.height || 0) - (a.height || 0));
-  if (videoOnly[0]?.url) return videoOnly[0].url;
+  // ── Priority 3: যেকোনো mp4 (last resort) ─────────────────────────────────
+  const anyMp4 = formats.find(f =>
+    f.ext === 'mp4' &&
+    f.url &&
+    !f.url.includes('.m3u8')
+  );
+  if (anyMp4?.url) return anyMp4.url;
 
+  // ── Fallback: info.url (original) ─────────────────────────────────────────
   return info.url || null;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BUFFER DOWNLOADER — server থেকে video নামিয়ে Buffer হিসেবে return করে
+// এটা দরকার কারণ Telegram সরাসরি TikTok CDN URL থেকে video নামাতে পারে না
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Download a video URL into a Buffer.
+ * Handles redirects, sets correct headers (User-Agent, Referer).
+ * @param {string} videoUrl
+ * @param {object} [extraHeaders]
+ * @returns {Promise<Buffer>}
+ */
+function downloadBuffer(videoUrl, extraHeaders = {}) {
+  return new Promise((resolve, reject) => {
+    const doRequest = (url, redirectCount = 0) => {
+      if (redirectCount > 5) return reject(new Error('Too many redirects'));
+
+      let parsed;
+      try { parsed = new urlModule.URL(url); }
+      catch (e) { return reject(new Error('Invalid URL: ' + url)); }
+
+      const lib = parsed.protocol === 'https:' ? https : http;
+
+      const req = lib.request(
+        {
+          hostname : parsed.hostname,
+          path     : parsed.pathname + parsed.search,
+          method   : 'GET',
+          headers  : {
+            'User-Agent'      : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept'          : 'video/mp4,video/*,*/*',
+            'Accept-Encoding' : 'identity',
+            'Connection'      : 'keep-alive',
+            ...extraHeaders,
+          },
+          timeout  : DOWNLOAD_TIMEOUT,
+        },
+        (res) => {
+          // Redirect handle
+          if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
+            return doRequest(res.headers.location, redirectCount + 1);
+          }
+
+          if (res.statusCode !== 200) {
+            return reject(new Error(`HTTP ${res.statusCode} while downloading video`));
+          }
+
+          const chunks = [];
+          res.on('data', chunk => chunks.push(chunk));
+          res.on('end',  ()    => resolve(Buffer.concat(chunks)));
+          res.on('error', reject);
+        }
+      );
+
+      req.on('error',   reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Download timeout')); });
+      req.end();
+    };
+
+    doRequest(videoUrl);
+  });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -214,15 +293,20 @@ function detectPlatform(rawUrl) {
 
 async function downloadTikTok(videoUrl) {
 
-  // ── Primary: yt-dlp (no watermark) ───────────────────────────────────────
+  // ── Primary: yt-dlp (no watermark mp4) ───────────────────────────────────
   try {
     const info    = await ytdlpInfo(videoUrl);
     const bestUrl = pickBestFormat(info);
     if (bestUrl) {
+      // Server থেকে buffer এ নামাও (TikTok CDN Telegram block করে)
+      const buffer = await downloadBuffer(bestUrl, {
+        'Referer' : 'https://www.tiktok.com/',
+        'Origin'  : 'https://www.tiktok.com',
+      });
       return {
-        url      : bestUrl,
+        buffer,
         title    : info.title || info.description || 'TikTok Video',
-        size     : formatSize(info.filesize || info.filesize_approx || 0),
+        size     : formatSize(buffer.length),
         duration : formatDuration(info.duration || 0),
         platform : 'TikTok',
       };
@@ -237,11 +321,18 @@ async function downloadTikTok(videoUrl) {
     if (data?.code === 0 && data?.data) {
       const v   = data.data;
       const lnk = v.hdplay || v.play || v.wmplay;
-      if (lnk) return {
-        url: lnk, title: v.title || 'TikTok Video',
-        size: formatSize(v.size || 0), duration: formatDuration(v.duration || 0),
-        platform: 'TikTok',
-      };
+      if (lnk) {
+        const buffer = await downloadBuffer(lnk, {
+          'Referer' : 'https://www.tikwm.com/',
+        });
+        return {
+          buffer,
+          title    : v.title || 'TikTok Video',
+          size     : formatSize(buffer.length),
+          duration : formatDuration(v.duration || 0),
+          platform : 'TikTok',
+        };
+      }
     }
   } catch (_) {}
 
@@ -253,10 +344,19 @@ async function downloadTikTok(videoUrl) {
       { Referer: 'https://snaptik.app/', Origin: 'https://snaptik.app' }
     );
     const match = html.match(/href="(https?:\/\/[^"]+\.mp4[^"]*)"/i);
-    if (match) return {
-      url: match[1].replace(/&amp;/g, '&'), title: 'TikTok Video',
-      size: 'Unknown', duration: 'Unknown', platform: 'TikTok',
-    };
+    if (match) {
+      const cleanUrl = match[1].replace(/&amp;/g, '&');
+      const buffer   = await downloadBuffer(cleanUrl, {
+        'Referer' : 'https://snaptik.app/',
+      });
+      return {
+        buffer,
+        title    : 'TikTok Video',
+        size     : formatSize(buffer.length),
+        duration : 'Unknown',
+        platform : 'TikTok',
+      };
+    }
   } catch (_) {}
 
   throw new Error('Could not download TikTok video. The link may be private or expired.');
@@ -269,16 +369,17 @@ async function downloadTikTok(videoUrl) {
 async function downloadInstagram(videoUrl) {
 
   // ── Primary: yt-dlp ───────────────────────────────────────────────────────
-  // yt-dlp handles Instagram Reels, Posts, IGTV without needing an API key.
-  // For private content set INSTAGRAM_COOKIES env var (Netscape cookie file path).
   try {
     const info    = await ytdlpInfo(videoUrl);
     const bestUrl = pickBestFormat(info);
     if (bestUrl) {
+      const buffer = await downloadBuffer(bestUrl, {
+        'Referer' : 'https://www.instagram.com/',
+      });
       return {
-        url      : bestUrl,
+        buffer,
         title    : info.title || info.description?.slice(0, 80) || 'Instagram Video',
-        size     : formatSize(info.filesize || info.filesize_approx || 0),
+        size     : formatSize(buffer.length),
         duration : formatDuration(info.duration || 0),
         platform : 'Instagram',
       };
@@ -298,10 +399,19 @@ async function downloadInstagram(videoUrl) {
     const inner  = parsed?.data || parsed?.html || '';
     const mp4    = inner.match(/href="(https?:\/\/[^"]+\.mp4[^"]*)"/i)
                 || inner.match(/href="(https?:\/\/[^"]+)"\s+[^>]*download/i);
-    if (mp4) return {
-      url: mp4[1].replace(/&amp;/g, '&'), title: 'Instagram Video',
-      size: 'Unknown', duration: 'Unknown', platform: 'Instagram',
-    };
+    if (mp4) {
+      const cleanUrl = mp4[1].replace(/&amp;/g, '&');
+      const buffer   = await downloadBuffer(cleanUrl, {
+        'Referer' : 'https://snapinsta.app/',
+      });
+      return {
+        buffer,
+        title    : 'Instagram Video',
+        size     : formatSize(buffer.length),
+        duration : 'Unknown',
+        platform : 'Instagram',
+      };
+    }
   } catch (_) {}
 
   // ── Fallback 2: saveig.app ────────────────────────────────────────────────
@@ -315,10 +425,19 @@ async function downloadInstagram(videoUrl) {
     const parsed  = JSON.parse(raw);
     const content = parsed?.data || '';
     const mp4     = content.match(/href="(https?:\/\/[^"]+\.mp4[^"]*)"/i);
-    if (mp4) return {
-      url: mp4[1].replace(/&amp;/g, '&'), title: 'Instagram Video',
-      size: 'Unknown', duration: 'Unknown', platform: 'Instagram',
-    };
+    if (mp4) {
+      const cleanUrl = mp4[1].replace(/&amp;/g, '&');
+      const buffer   = await downloadBuffer(cleanUrl, {
+        'Referer' : 'https://saveig.app/',
+      });
+      return {
+        buffer,
+        title    : 'Instagram Video',
+        size     : formatSize(buffer.length),
+        duration : 'Unknown',
+        platform : 'Instagram',
+      };
+    }
   } catch (_) {}
 
   // ── Fallback 3: reelsaver.net ─────────────────────────────────────────────
@@ -331,11 +450,18 @@ async function downloadInstagram(videoUrl) {
     const parsed = JSON.parse(raw);
     const medias = parsed?.medias || [];
     const video  = medias.find(m => m.url);
-    if (video?.url) return {
-      url: video.url, title: parsed.title || 'Instagram Video',
-      size: formatSize(parsed.size || 0), duration: formatDuration(parsed.duration || 0),
-      platform: 'Instagram',
-    };
+    if (video?.url) {
+      const buffer = await downloadBuffer(video.url, {
+        'Referer' : 'https://reelsaver.net/',
+      });
+      return {
+        buffer,
+        title    : parsed.title || 'Instagram Video',
+        size     : formatSize(buffer.length),
+        duration : formatDuration(parsed.duration || 0),
+        platform : 'Instagram',
+      };
+    }
   } catch (_) {}
 
   throw new Error(
@@ -358,10 +484,13 @@ async function downloadFacebook(videoUrl) {
     const info    = await ytdlpInfo(finalUrl);
     const bestUrl = pickBestFormat(info);
     if (bestUrl) {
+      const buffer = await downloadBuffer(bestUrl, {
+        'Referer' : 'https://www.facebook.com/',
+      });
       return {
-        url      : bestUrl,
+        buffer,
         title    : info.title || 'Facebook Video',
-        size     : formatSize(info.filesize || info.filesize_approx || 0),
+        size     : formatSize(buffer.length),
         duration : formatDuration(info.duration || 0),
         platform : 'Facebook',
       };
@@ -380,10 +509,19 @@ async function downloadFacebook(videoUrl) {
     const hd = html.match(/id="hdlink"[^>]*href="([^"]+)"/i);
     const sd = html.match(/id="sdlink"[^>]*href="([^"]+)"/i);
     const lk = hd || sd;
-    if (lk) return {
-      url: lk[1].replace(/&amp;/g, '&'), title: 'Facebook Video',
-      size: 'Unknown', duration: 'Unknown', platform: 'Facebook',
-    };
+    if (lk) {
+      const cleanUrl = lk[1].replace(/&amp;/g, '&');
+      const buffer   = await downloadBuffer(cleanUrl, {
+        'Referer' : 'https://fdown.net/',
+      });
+      return {
+        buffer,
+        title    : 'Facebook Video',
+        size     : formatSize(buffer.length),
+        duration : 'Unknown',
+        platform : 'Facebook',
+      };
+    }
   } catch (_) {}
 
   // ── Fallback 2: getfvid.com ───────────────────────────────────────────────
@@ -392,10 +530,18 @@ async function downloadFacebook(videoUrl) {
       `https://getfvid.com/api?url=${encodeURIComponent(finalUrl)}&format=json`
     );
     const link = data?.links?.hd || data?.links?.sd;
-    if (link) return {
-      url: link, title: data.title || 'Facebook Video',
-      size: 'Unknown', duration: 'Unknown', platform: 'Facebook',
-    };
+    if (link) {
+      const buffer = await downloadBuffer(link, {
+        'Referer' : 'https://getfvid.com/',
+      });
+      return {
+        buffer,
+        title    : data.title || 'Facebook Video',
+        size     : formatSize(buffer.length),
+        duration : 'Unknown',
+        platform : 'Facebook',
+      };
+    }
   } catch (_) {}
 
   throw new Error(
