@@ -1,5 +1,7 @@
 node_modules/
 .env
 data.json
+bin/
 *.log
 .DS_Store
+cookies.txt
