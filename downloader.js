@@ -29,17 +29,27 @@ const { URL_PATTERNS, DOWNLOAD_TIMEOUT } = require('./config');
 
 /**
  * Run yt-dlp with --dump-json to extract video metadata + direct URL.
+ * platform: 'tiktok' | 'instagram' | 'facebook' — used to pick best format flag
  * Returns parsed JSON object from yt-dlp output.
  */
-function ytdlpInfo(videoUrl) {
+function ytdlpInfo(videoUrl, platform = 'generic') {
   return new Promise((resolve, reject) => {
+
+    // ── Platform-specific best format selector ────────────────────────────────
+    // Facebook: HD mp4 (video+audio combined) force করা হচ্ছে
+    // TikTok/Instagram: default (pickBestFormat() handle করবে)
+    const formatArgs = platform === 'facebook'
+      ? ['--format', 'bestvideo[ext=mp4][height>=720]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best']
+      : [];
+
     const args = [
-      '--dump-json',           // print JSON info, don't download
-      '--no-playlist',         // single video only
+      '--dump-json',
+      '--no-playlist',
       '--no-warnings',
       '--quiet',
       '--socket-timeout', '30',
-      // For Instagram: use cookies from environment if set
+      ...formatArgs,
+      // Instagram cookies support
       ...(process.env.INSTAGRAM_COOKIES
         ? ['--cookies', process.env.INSTAGRAM_COOKIES]
         : []
@@ -50,7 +60,6 @@ function ytdlpInfo(videoUrl) {
     execFile('yt-dlp', args, { timeout: 55000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) return reject(new Error(err.message || stderr || 'yt-dlp failed'));
       try {
-        // yt-dlp may output multiple JSON lines for playlists — take first
         const firstLine = stdout.trim().split('\n')[0];
         resolve(JSON.parse(firstLine));
       } catch {
@@ -63,8 +72,9 @@ function ytdlpInfo(videoUrl) {
 /**
  * Extract best MP4 video URL from yt-dlp info object.
  * ✅ Strictly filters: mp4 only, video+audio combined, no stream links.
+ * Facebook এর জন্য height অনুযায়ী HD প্রথমে আসবে।
  */
-function pickBestFormat(info) {
+function pickBestFormat(info, platform = 'generic') {
   if (!info) return null;
 
   // Direct URL (no formats array) — return as-is
@@ -73,32 +83,65 @@ function pickBestFormat(info) {
   const formats = info.formats || [];
 
   // ── Priority 1: TikTok no-watermark mp4 (video+audio combined) ──────────
-  const noWatermark = formats.find(f =>
-    (f.format_id === 'download' ||
-      /no.?watermark|nowm|hd/i.test(f.format_note || '')) &&
-    f.ext === 'mp4' &&
-    f.vcodec !== 'none' &&
-    f.acodec !== 'none' &&
-    f.url &&
-    !f.url.includes('.m3u8')
-  );
-  if (noWatermark?.url) return noWatermark.url;
+  if (platform === 'tiktok') {
+    const noWatermark = formats.find(f =>
+      (f.format_id === 'download' ||
+        /no.?watermark|nowm|hd/i.test(f.format_note || '')) &&
+      f.ext === 'mp4' &&
+      f.vcodec !== 'none' &&
+      f.acodec !== 'none' &&
+      f.url &&
+      !f.url.includes('.m3u8')
+    );
+    if (noWatermark?.url) return noWatermark.url;
+  }
 
-  // ── Priority 2: Best combined mp4 (video+audio, highest resolution) ──────
+  // ── Priority 2 (Facebook): Height >= 720 combined mp4 ────────────────────
+  if (platform === 'facebook') {
+    const hdCombined = formats
+      .filter(f =>
+        f.ext === 'mp4' &&
+        f.vcodec !== 'none' &&
+        f.acodec !== 'none' &&
+        (f.height || 0) >= 720 &&
+        f.url &&
+        !f.url.includes('.m3u8') &&
+        !f.url.includes('.webm')
+      )
+      .sort((a, b) => (b.height || 0) - (a.height || 0));
+
+    if (hdCombined[0]?.url) return hdCombined[0].url;
+
+    // Facebook SD fallback (combined)
+    const sdCombined = formats
+      .filter(f =>
+        f.ext === 'mp4' &&
+        f.vcodec !== 'none' &&
+        f.acodec !== 'none' &&
+        f.url &&
+        !f.url.includes('.m3u8') &&
+        !f.url.includes('.webm')
+      )
+      .sort((a, b) => (b.height || 0) - (a.height || 0));
+
+    if (sdCombined[0]?.url) return sdCombined[0].url;
+  }
+
+  // ── Priority 3: Best combined mp4 (video+audio, highest resolution) ──────
   const combined = formats
     .filter(f =>
       f.ext === 'mp4' &&
       f.vcodec !== 'none' &&
       f.acodec !== 'none' &&
       f.url &&
-      !f.url.includes('.m3u8') &&   // ❌ stream বাদ
-      !f.url.includes('.webm')       // ❌ webm বাদ
+      !f.url.includes('.m3u8') &&
+      !f.url.includes('.webm')
     )
     .sort((a, b) => (b.height || 0) - (a.height || 0));
 
   if (combined[0]?.url) return combined[0].url;
 
-  // ── Priority 3: যেকোনো mp4 (last resort) ─────────────────────────────────
+  // ── Priority 4: যেকোনো mp4 (last resort) ─────────────────────────────────
   const anyMp4 = formats.find(f =>
     f.ext === 'mp4' &&
     f.url &&
@@ -106,7 +149,7 @@ function pickBestFormat(info) {
   );
   if (anyMp4?.url) return anyMp4.url;
 
-  // ── Fallback: info.url (original) ─────────────────────────────────────────
+  // ── Fallback: info.url (original) ────────────────────────────────────────
   return info.url || null;
 }
 
@@ -295,10 +338,9 @@ async function downloadTikTok(videoUrl) {
 
   // ── Primary: yt-dlp (no watermark mp4) ───────────────────────────────────
   try {
-    const info    = await ytdlpInfo(videoUrl);
-    const bestUrl = pickBestFormat(info);
+    const info    = await ytdlpInfo(videoUrl, 'tiktok');
+    const bestUrl = pickBestFormat(info, 'tiktok');
     if (bestUrl) {
-      // Server থেকে buffer এ নামাও (TikTok CDN Telegram block করে)
       const buffer = await downloadBuffer(bestUrl, {
         'Referer' : 'https://www.tiktok.com/',
         'Origin'  : 'https://www.tiktok.com',
@@ -370,8 +412,8 @@ async function downloadInstagram(videoUrl) {
 
   // ── Primary: yt-dlp ───────────────────────────────────────────────────────
   try {
-    const info    = await ytdlpInfo(videoUrl);
-    const bestUrl = pickBestFormat(info);
+    const info    = await ytdlpInfo(videoUrl, 'instagram');
+    const bestUrl = pickBestFormat(info, 'instagram');
     if (bestUrl) {
       const buffer = await downloadBuffer(bestUrl, {
         'Referer' : 'https://www.instagram.com/',
@@ -472,17 +514,19 @@ async function downloadInstagram(videoUrl) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// FACEBOOK
+// FACEBOOK  ✅ FIXED — HD quality priority added
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function downloadFacebook(videoUrl) {
   let finalUrl = videoUrl;
   if (/fb\.watch/i.test(videoUrl)) finalUrl = await resolveRedirect(videoUrl);
 
-  // ── Primary: yt-dlp ───────────────────────────────────────────────────────
+  // ── Primary: yt-dlp (HD format forced) ───────────────────────────────────
+  // platform='facebook' pass করা হচ্ছে যাতে ytdlpInfo() --format flag দেয়
+  // এবং pickBestFormat() height>=720 HD format আগে নেয়
   try {
-    const info    = await ytdlpInfo(finalUrl);
-    const bestUrl = pickBestFormat(info);
+    const info    = await ytdlpInfo(finalUrl, 'facebook');
+    const bestUrl = pickBestFormat(info, 'facebook');
     if (bestUrl) {
       const buffer = await downloadBuffer(bestUrl, {
         'Referer' : 'https://www.facebook.com/',
@@ -499,16 +543,29 @@ async function downloadFacebook(videoUrl) {
     console.warn('[Facebook yt-dlp]', ytErr.message);
   }
 
-  // ── Fallback 1: fdown.net ─────────────────────────────────────────────────
+  // ── Fallback 1: fdown.net — HD regex improved ─────────────────────────────
+  // আগের regex শুধু id="hdlink" match করত, কিন্তু fdown.net এর HTML structure
+  // বদলে যায়। এখন multiple patterns চেষ্টা করা হচ্ছে।
   try {
     const html = await fetchPost(
       'https://fdown.net/download.php',
       `URLz=${encodeURIComponent(finalUrl)}`,
       { Referer: 'https://fdown.net/', Origin: 'https://fdown.net' }
     );
-    const hd = html.match(/id="hdlink"[^>]*href="([^"]+)"/i);
-    const sd = html.match(/id="sdlink"[^>]*href="([^"]+)"/i);
-    const lk = hd || sd;
+
+    // HD link — multiple regex patterns (fdown.net এর HTML structure vary করে)
+    const hd =
+      html.match(/id="hdlink"[^>]*href="([^"]+)"/i) ||
+      html.match(/href="([^"]+)"[^>]*id="hdlink"/i) ||
+      html.match(/quality[^>]*hd[^>]*href="([^"]+\.mp4[^"]*)"/i) ||
+      html.match(/<a[^>]+href="(https?:\/\/[^"]+\.mp4[^"]*)"[^>]*>\s*HD/i);
+
+    const sd =
+      html.match(/id="sdlink"[^>]*href="([^"]+)"/i) ||
+      html.match(/href="([^"]+)"[^>]*id="sdlink"/i) ||
+      html.match(/<a[^>]+href="(https?:\/\/[^"]+\.mp4[^"]*)"[^>]*>\s*SD/i);
+
+    const lk = hd || sd; // HD সবসময় আগে
     if (lk) {
       const cleanUrl = lk[1].replace(/&amp;/g, '&');
       const buffer   = await downloadBuffer(cleanUrl, {
@@ -524,11 +581,12 @@ async function downloadFacebook(videoUrl) {
     }
   } catch (_) {}
 
-  // ── Fallback 2: getfvid.com ───────────────────────────────────────────────
+  // ── Fallback 2: getfvid.com — HD priority explicit ────────────────────────
   try {
     const data = await fetchJSON(
       `https://getfvid.com/api?url=${encodeURIComponent(finalUrl)}&format=json`
     );
+    // HD আগে, SD পরে
     const link = data?.links?.hd || data?.links?.sd;
     if (link) {
       const buffer = await downloadBuffer(link, {
@@ -537,6 +595,38 @@ async function downloadFacebook(videoUrl) {
       return {
         buffer,
         title    : data.title || 'Facebook Video',
+        size     : formatSize(buffer.length),
+        duration : 'Unknown',
+        platform : 'Facebook',
+      };
+    }
+  } catch (_) {}
+
+  // ── Fallback 3: fbdownloader.com ─────────────────────────────────────────
+  // Extra fallback — getfvid ও fdown fail করলে
+  try {
+    const raw  = await fetchPost(
+      'https://fbdownloader.com/api/data',
+      `url=${encodeURIComponent(finalUrl)}`,
+      {
+        Referer            : 'https://fbdownloader.com/',
+        Origin             : 'https://fbdownloader.com',
+        'X-Requested-With' : 'XMLHttpRequest',
+      }
+    );
+    const parsed = JSON.parse(raw);
+    // HD আগে নাও
+    const hdUrl  = parsed?.hd || parsed?.links?.hd;
+    const sdUrl  = parsed?.sd || parsed?.links?.sd || parsed?.url;
+    const link   = hdUrl || sdUrl;
+    if (link) {
+      const cleanUrl = link.replace(/&amp;/g, '&');
+      const buffer   = await downloadBuffer(cleanUrl, {
+        'Referer' : 'https://fbdownloader.com/',
+      });
+      return {
+        buffer,
+        title    : parsed.title || 'Facebook Video',
         size     : formatSize(buffer.length),
         duration : 'Unknown',
         platform : 'Facebook',
