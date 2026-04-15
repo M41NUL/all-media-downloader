@@ -390,7 +390,6 @@ bot.on('text', async (ctx) => {
   // Strategy: run the real download and the bar animation in parallel.
   // • If download finishes BEFORE animation → jump bar to 100% immediately.
   // • If download FAILS → stop animation at current step, show error right away.
-  //   (No more "stuck at 10%" — failure is surfaced instantly.)
 
   await safeEdit(ctx, chatId, statusMsg.message_id,
     progressBar(0, '0 MB/s', 'download'),
@@ -442,7 +441,7 @@ bot.on('text', async (ctx) => {
     }
 
   } catch (err) {
-    // Download failed — show error immediately, no full animation
+    // Download failed — show error immediately
     console.error(`[Download Error] ${platform} | ${text} | ${err.message}`);
     await safeEdit(ctx, chatId, statusMsg.message_id,
       errorText(err.message),
@@ -466,10 +465,11 @@ bot.on('text', async (ctx) => {
   // Delete progress message
   await safeDelete(ctx, chatId, statusMsg.message_id);
 
-  // ── Step 4: Send final video ──────────────────────────────────────────────
+  // ── Step 4: Send final video (buffer থেকে — URL নয়) ─────────────────────
   try {
     await ctx.replyWithVideo(
-      { url: info.url },
+      // ✅ buffer দিয়ে পাঠানো হচ্ছে — Telegram সরাসরি play করতে পারবে
+      { source: info.buffer, filename: 'video.mp4' },
       {
         caption      : resultCaption(info),
         parse_mode   : 'MarkdownV2',
@@ -477,12 +477,12 @@ bot.on('text', async (ctx) => {
       }
     );
   } catch (sendErr) {
-    // Video too large or URL failed — send as link instead
-    const fallback = await ctx.replyWithMarkdownV2(
-      `${resultCaption(info)}\n\n🔗 [Direct Download Link](${escMd(info.url)})`,
+    // Buffer send failed — fallback: direct download link
+    console.error(`[Send Error] ${sendErr.message}`);
+    await ctx.replyWithMarkdownV2(
+      `${resultCaption(info)}\n\n⚠️ _Video too large to send directly\\._`,
       { reply_markup: RESULT_MENU.reply_markup }
     );
-    console.error(`[Send Error] ${sendErr.message}`);
   }
 });
 
