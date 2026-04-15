@@ -336,6 +336,10 @@ bot.action('result_clear', async (ctx) => {
 // ══════════════════════════════════════════════════════════════════════════════
 
 bot.on('text', async (ctx) => {
+
+  // ❗ Ignore all commands like /admin, /start
+  if (ctx.message.text.startsWith('/')) return;
+
   db.upsertUser(ctx.from);
 
   // Admin broadcast check
