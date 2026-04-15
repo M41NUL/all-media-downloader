@@ -337,8 +337,13 @@ bot.action('result_clear', async (ctx) => {
 
 bot.on('text', async (ctx) => {
 
-  // ❗ Ignore all commands like /admin, /start
-  if (ctx.message.text.startsWith('/')) return;
+  const textRaw = ctx.message.text;
+
+  // ✅ Allow admin & start command to pass
+  if (textRaw.startsWith('/')) {
+    if (textRaw === '/admin' || textRaw === '/start') return;
+    return;
+  }
 
   db.upsertUser(ctx.from);
 
@@ -347,18 +352,19 @@ bot.on('text', async (ctx) => {
   if (consumed) return;
 
   const sess    = getSession(ctx.from.id);
-  const text    = ctx.message.text.trim();
+  const text    = textRaw.trim();
   const chatId  = ctx.chat.id;
   const userMid = ctx.message.message_id;
 
   // Guard: no active mode OR auto mode is OFF
   if (!sess.mode || (sess.mode === 'auto' && !sess.autoEnabled)) {
     await safeDelete(ctx, chatId, userMid);
-    // Nudge user to choose a mode
+
     const nudge = await ctx.replyWithMarkdownV2(
       '⚠️ Please select a mode first\\.',
       MAIN_MENU
     );
+
     setTimeout(() => safeDelete(ctx, chatId, nudge.message_id), 4000);
     return;
   }
