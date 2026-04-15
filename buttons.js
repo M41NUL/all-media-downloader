@@ -253,7 +253,7 @@ function resultCaption(info) {
 ⚖️ *Size:* ${size}
 ⏱️ *Duration:* ${duration}
 
-🤖 *Bot:* All Media Downloader
+🤖 *Bot:* [All Media Downloader](https://t.me/allmedia_downloaderx_bot)
 👨‍💻 *Dev:* ${escMd(DEV.handle)}`
   );
 }
