@@ -35,9 +35,7 @@ const { URL_PATTERNS, DOWNLOAD_TIMEOUT } = require('./config');
 function ytdlpInfo(videoUrl, platform = 'generic') {
   return new Promise((resolve, reject) => {
 
-    // ── Platform-specific best format selector ────────────────────────────────
-    // Facebook: HD mp4 (video+audio combined) force করা হচ্ছে
-    // TikTok/Instagram: default (pickBestFormat() handle করবে)
+    
     const formatArgs = platform === 'facebook'
       ? ['--format', 'bestvideo[ext=mp4][height>=720]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best']
       : [];
@@ -69,11 +67,7 @@ function ytdlpInfo(videoUrl, platform = 'generic') {
   });
 }
 
-/**
- * Extract best MP4 video URL from yt-dlp info object.
- * ✅ Strictly filters: mp4 only, video+audio combined, no stream links.
- * Facebook এর জন্য height অনুযায়ী HD প্রথমে আসবে।
- */
+
 function pickBestFormat(info, platform = 'generic') {
   if (!info) return null;
 
@@ -153,18 +147,7 @@ function pickBestFormat(info, platform = 'generic') {
   return info.url || null;
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// BUFFER DOWNLOADER — server থেকে video নামিয়ে Buffer হিসেবে return করে
-// এটা দরকার কারণ Telegram সরাসরি TikTok CDN URL থেকে video নামাতে পারে না
-// ══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Download a video URL into a Buffer.
- * Handles redirects, sets correct headers (User-Agent, Referer).
- * @param {string} videoUrl
- * @param {object} [extraHeaders]
- * @returns {Promise<Buffer>}
- */
 function downloadBuffer(videoUrl, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const doRequest = (url, redirectCount = 0) => {
@@ -514,16 +497,14 @@ async function downloadInstagram(videoUrl) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// FACEBOOK  ✅ FIXED — HD quality priority added
+// FACEBOOK 
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function downloadFacebook(videoUrl) {
   let finalUrl = videoUrl;
   if (/fb\.watch/i.test(videoUrl)) finalUrl = await resolveRedirect(videoUrl);
 
-  // ── Primary: yt-dlp (HD format forced) ───────────────────────────────────
-  // platform='facebook' pass করা হচ্ছে যাতে ytdlpInfo() --format flag দেয়
-  // এবং pickBestFormat() height>=720 HD format আগে নেয়
+
   try {
     const info    = await ytdlpInfo(finalUrl, 'facebook');
     const bestUrl = pickBestFormat(info, 'facebook');
@@ -543,9 +524,7 @@ async function downloadFacebook(videoUrl) {
     console.warn('[Facebook yt-dlp]', ytErr.message);
   }
 
-  // ── Fallback 1: fdown.net — HD regex improved ─────────────────────────────
-  // আগের regex শুধু id="hdlink" match করত, কিন্তু fdown.net এর HTML structure
-  // বদলে যায়। এখন multiple patterns চেষ্টা করা হচ্ছে।
+  
   try {
     const html = await fetchPost(
       'https://fdown.net/download.php',
@@ -553,7 +532,7 @@ async function downloadFacebook(videoUrl) {
       { Referer: 'https://fdown.net/', Origin: 'https://fdown.net' }
     );
 
-    // HD link — multiple regex patterns (fdown.net এর HTML structure vary করে)
+    
     const hd =
       html.match(/id="hdlink"[^>]*href="([^"]+)"/i) ||
       html.match(/href="([^"]+)"[^>]*id="hdlink"/i) ||
@@ -565,7 +544,7 @@ async function downloadFacebook(videoUrl) {
       html.match(/href="([^"]+)"[^>]*id="sdlink"/i) ||
       html.match(/<a[^>]+href="(https?:\/\/[^"]+\.mp4[^"]*)"[^>]*>\s*SD/i);
 
-    const lk = hd || sd; // HD সবসময় আগে
+    const lk = hd || sd; 
     if (lk) {
       const cleanUrl = lk[1].replace(/&amp;/g, '&');
       const buffer   = await downloadBuffer(cleanUrl, {
@@ -586,7 +565,7 @@ async function downloadFacebook(videoUrl) {
     const data = await fetchJSON(
       `https://getfvid.com/api?url=${encodeURIComponent(finalUrl)}&format=json`
     );
-    // HD আগে, SD পরে
+    
     const link = data?.links?.hd || data?.links?.sd;
     if (link) {
       const buffer = await downloadBuffer(link, {
@@ -603,7 +582,7 @@ async function downloadFacebook(videoUrl) {
   } catch (_) {}
 
   // ── Fallback 3: fbdownloader.com ─────────────────────────────────────────
-  // Extra fallback — getfvid ও fdown fail করলে
+  
   try {
     const raw  = await fetchPost(
       'https://fbdownloader.com/api/data',
@@ -615,7 +594,7 @@ async function downloadFacebook(videoUrl) {
       }
     );
     const parsed = JSON.parse(raw);
-    // HD আগে নাও
+    
     const hdUrl  = parsed?.hd || parsed?.links?.hd;
     const sdUrl  = parsed?.sd || parsed?.links?.sd || parsed?.url;
     const link   = hdUrl || sdUrl;
