@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/M41NUL/all-media-downloader/main/img/bot_profile.jpg" width="120" height="120" style="border-radius:50%"/>
+<img src="https://raw.githubusercontent.com/M41NUL/all-media-downloader/main/img/bot_profile.png" width="120" height="120" style="border-radius:50%"/>
 
 # 🎬 ***All Media Downloader Bot***
 
@@ -12,6 +12,17 @@
 [![GitHub Stars](https://img.shields.io/github/stars/M41NUL/all-media-downloader?style=for-the-badge&logo=github&color=FFD700&logoColor=black)](https://github.com/M41NUL/all-media-downloader/stargazers)
 [![GitHub Forks](https://img.shields.io/github/forks/M41NUL/all-media-downloader?style=for-the-badge&logo=github&color=orange)](https://github.com/M41NUL/all-media-downloader/network/members)
 [![GitHub Watchers](https://img.shields.io/github/watchers/M41NUL/all-media-downloader?style=for-the-badge&logo=github&color=blue)](https://github.com/M41NUL/all-media-downloader/watchers)
+[![Views](https://komarev.com/ghpvc/?username=M41NUL&repo=all-media-downloader&style=for-the-badge&color=blue)]()
+[![Clones](https://img.shields.io/badge/Repo-Clones-green?style=for-the-badge)]()
+[![Last Commit](https://img.shields.io/github/last-commit/M41NUL/all-media-downloader?style=for-the-badge&color=green)]()
+[![Top Language](https://img.shields.io/github/languages/top/M41NUL/all-media-downloader?style=for-the-badge)]()
+[![Code Size](https://img.shields.io/github/languages/code-size/M41NUL/all-media-downloader?style=for-the-badge)]()
+[![Issues](https://img.shields.io/github/issues/M41NUL/all-media-downloader?style=for-the-badge&color=red)]()
+[![Pull Requests](https://img.shields.io/github/issues-pr/M41NUL/all-media-downloader?style=for-the-badge&color=blueviolet)]()
+[![Deploy Status](https://img.shields.io/badge/Status-Live-success?style=for-the-badge)]()
+[![Uptime](https://img.shields.io/badge/Uptime-99%25-brightgreen?style=for-the-badge)]()
+[![Contributors](https://img.shields.io/github/contributors/M41NUL/all-media-downloader?style=for-the-badge)]()
+[![License](https://img.shields.io/github/license/M41NUL/all-media-downloader?style=for-the-badge)]()
 
 <br/>
 
@@ -200,6 +211,31 @@ npm start
 # Or with auto-reload
 npm run dev
 ```
+
+---
+
+## ***🤖 Telegram Bot Profile Picture***
+
+<p align="center">
+<b><i>
+Use this official profile picture for your Telegram bot.<br/>
+Anyone can download and use it for their own bot project.
+</i></b>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/M41NUL/all-media-downloader/main/img/bot_profile.png" width="140" height="140" style="border-radius:50%; box-shadow: 0 0 10px rgba(0,0,0,0.2);"/>
+</p>
+
+<p align="center">
+  <a href="https://raw.githubusercontent.com/M41NUL/all-media-downloader/main/img/bot_profile.png" download>
+    <img src="https://img.shields.io/badge/⬇️%20Download-Profile%20Picture-blue?style=for-the-badge&logo=telegram"/>
+  </a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/github/downloads/M41NUL/all-media-downloader/total?style=for-the-badge&color=green&label=Total%20Downloads"/>
+</p>
 
 ---
 
