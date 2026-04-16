@@ -246,7 +246,7 @@ function resultCaption(info) {
   const duration = escMd(info.duration || 'Unknown');
 
   return (
-`📋 \`${title}\`
+`📋 *Title:* \`${title}\`
 
 🌐 *Platform:* ${platform}
 🎥 *Format:* MP4
