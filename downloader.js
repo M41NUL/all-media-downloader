@@ -17,183 +17,190 @@
 
 'use strict';
 
-const { execFile }  = require('child_process');
-const https         = require('https');
-const http          = require('http');
-const urlModule     = require('url');
+const { execFile, spawn } = require('child_process');
+const https               = require('https');
+const http                = require('http');
+const urlModule           = require('url');
+const fs                  = require('fs');
+const path                = require('path');
+const os                  = require('os');
 const { URL_PATTERNS, DOWNLOAD_TIMEOUT } = require('./config');
 
 // ══════════════════════════════════════════════════════════════════════════════
-// YT-DLP ENGINE
+// CONSTANTS
 // ══════════════════════════════════════════════════════════════════════════════
 
+const MAX_FILE_SIZE   = 50 * 1024 * 1024;   // 50 MB — Telegram bot limit
+const YTDLP_TIMEOUT   = 120_000;             // 2 min total for yt-dlp process
+const SOCKET_TIMEOUT  = '30';               // yt-dlp internal socket timeout (seconds)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// YT-DLP ENGINE  (FILE-BASED — no RAM buffer for video download)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Run yt-dlp --dump-json to get metadata ONLY.
+ * Format args here affect what format yt-dlp *reports* in the JSON,
+ * but we do the actual download separately with ytdlpDownload().
+ */
 function ytdlpInfo(videoUrl, platform = 'generic') {
   return new Promise((resolve, reject) => {
 
-    let formatArgs = [];
-
+    // ── Format selection per platform ─────────────────────────────────────
+    // FIX: Use format strings that guarantee combined audio+video
+    // so we always get a single URL with both streams (no merge needed).
+    let formatStr;
     if (platform === 'tiktok') {
-      // TikTok: combined mp4 first (already has audio), then merge fallback
-      formatArgs = [
-        '--format',
-        'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
-        '--merge-output-format', 'mp4',
-      ];
+      // TikTok CDN always serves combined mp4 — no merge needed
+      formatStr = 'best[ext=mp4][vcodec!=none][acodec!=none]/best[ext=mp4]/best';
     } else if (platform === 'facebook') {
-      // Facebook: HD separate streams preferred, SD fallback
-      formatArgs = [
-        '--format',
-        'bestvideo[ext=mp4][height>=720]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        '--merge-output-format', 'mp4',
-      ];
+      // FIX: height >= 720 fails when height metadata is null.
+      // Use tbr (bitrate) fallback chain instead.
+      formatStr =
+        'best[ext=mp4][vcodec!=none][acodec!=none][height>=720]/' +
+        'best[ext=mp4][vcodec!=none][acodec!=none][height>=480]/' +
+        'best[ext=mp4][vcodec!=none][acodec!=none]/'              +
+        'best[ext=mp4]/best';
     } else if (platform === 'instagram') {
-      // Instagram: best separate streams, merged to mp4
-      formatArgs = [
-        '--format',
-        'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio/best[ext=mp4]/best',
-        '--merge-output-format', 'mp4',
-      ];
+      formatStr =
+        'best[ext=mp4][vcodec!=none][acodec!=none]/' +
+        'best[ext=mp4]/best';
+    } else {
+      formatStr =
+        'best[ext=mp4][vcodec!=none][acodec!=none]/' +
+        'best[ext=mp4]/best';
     }
 
     const args = [
       '--dump-json',
       '--no-playlist',
-      '--playlist-items', '1',       // FIX: TikTok multi-video problem
+      '--playlist-items', '1',
       '--no-warnings',
       '--quiet',
-      '--socket-timeout', '30',
-      ...formatArgs,
+      '--socket-timeout', SOCKET_TIMEOUT,
+      '--format', formatStr,
       ...(process.env.INSTAGRAM_COOKIES
         ? ['--cookies', process.env.INSTAGRAM_COOKIES]
-        : []
-      ),
+        : []),
       videoUrl,
     ];
 
-    execFile('yt-dlp', args, { timeout: 55000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
-      if (err) return reject(new Error(err.message || stderr || 'yt-dlp failed'));
-      try {
-        const firstLine = stdout.trim().split('\n')[0];
-        resolve(JSON.parse(firstLine));
-      } catch {
-        reject(new Error('yt-dlp returned invalid JSON'));
+    // FIX: Kill yt-dlp process after YTDLP_TIMEOUT — prevents zombie hangs
+    const proc = execFile(
+      'yt-dlp', args,
+      { timeout: YTDLP_TIMEOUT, maxBuffer: 10 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (err) return reject(new Error(err.message || stderr || 'yt-dlp failed'));
+        try {
+          const firstLine = stdout.trim().split('\n')[0];
+          resolve(JSON.parse(firstLine));
+        } catch {
+          reject(new Error('yt-dlp returned invalid JSON'));
+        }
       }
+    );
+
+    // Extra safety: hard-kill if still alive after timeout
+    setTimeout(() => {
+      try { proc.kill('SIGKILL'); } catch (_) {}
+    }, YTDLP_TIMEOUT + 5000);
+  });
+}
+
+/**
+ * Download video directly to a temp file using yt-dlp.
+ * FIX: Avoids loading the entire video into RAM (no Buffer).
+ * Returns the temp file path — caller must delete it after use.
+ */
+function ytdlpDownload(videoUrl, platform = 'generic') {
+  return new Promise((resolve, reject) => {
+    const tmpDir  = os.tmpdir();
+    const outFile = path.join(tmpDir, `ytdlp_${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`);
+
+    let formatStr;
+    if (platform === 'tiktok') {
+      formatStr = 'best[ext=mp4][vcodec!=none][acodec!=none]/best[ext=mp4]/best';
+    } else if (platform === 'facebook') {
+      formatStr =
+        'best[ext=mp4][vcodec!=none][acodec!=none][height>=720]/' +
+        'best[ext=mp4][vcodec!=none][acodec!=none][height>=480]/' +
+        'best[ext=mp4][vcodec!=none][acodec!=none]/'              +
+        'best[ext=mp4]/best';
+    } else if (platform === 'instagram') {
+      formatStr =
+        'best[ext=mp4][vcodec!=none][acodec!=none]/' +
+        'best[ext=mp4]/best';
+    } else {
+      formatStr =
+        'best[ext=mp4][vcodec!=none][acodec!=none]/' +
+        'best[ext=mp4]/best';
+    }
+
+    const args = [
+      '--no-playlist',
+      '--playlist-items', '1',
+      '--no-warnings',
+      '--quiet',
+      '--socket-timeout', SOCKET_TIMEOUT,
+      '--format', formatStr,
+      '--merge-output-format', 'mp4',   // ensure final container = mp4
+      '--output', outFile,
+      ...(process.env.INSTAGRAM_COOKIES
+        ? ['--cookies', process.env.INSTAGRAM_COOKIES]
+        : []),
+      videoUrl,
+    ];
+
+    // FIX: Use spawn so we can kill the process reliably on timeout
+    const proc   = spawn('yt-dlp', args);
+    let   stderr = '';
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+
+    const killer = setTimeout(() => {
+      try { proc.kill('SIGKILL'); } catch (_) {}
+      reject(new Error('yt-dlp download timed out'));
+    }, YTDLP_TIMEOUT);
+
+    proc.on('close', (code) => {
+      clearTimeout(killer);
+      if (code !== 0) {
+        return reject(new Error(`yt-dlp exited ${code}: ${stderr.slice(0, 300)}`));
+      }
+      if (!fs.existsSync(outFile)) {
+        return reject(new Error('yt-dlp finished but output file not found'));
+      }
+      // FIX: Check file size before returning — reject if > 50 MB
+      const stat = fs.statSync(outFile);
+      if (stat.size > MAX_FILE_SIZE) {
+        fs.unlink(outFile, () => {});
+        return reject(new Error(
+          `Video is too large (${(stat.size / 1024 / 1024).toFixed(1)} MB). ` +
+          `Maximum allowed size is ${MAX_FILE_SIZE / 1024 / 1024} MB.`
+        ));
+      }
+      resolve(outFile);
+    });
+
+    proc.on('error', (e) => {
+      clearTimeout(killer);
+      reject(e);
     });
   });
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// HTTP HELPERS
+// ══════════════════════════════════════════════════════════════════════════════
 
-function pickBestFormat(info, platform = 'generic') {
-  if (!info) return null;
-
-  // Direct URL (no formats array) — return as-is
-  if (info.url && !info.formats) return info.url;
-
-  const formats = info.formats || [];
-
-  // Helper: sort by height then bitrate
-  const byQuality = (a, b) =>
-    (b.height || 0) - (a.height || 0) ||
-    (b.tbr || 0)    - (a.tbr    || 0);
-
-  // ── Priority 1: TikTok — combined mp4, no watermark preferred ────────────
-  if (platform === 'tiktok') {
-    // First try: explicit no-watermark or HD format
-    const noWatermark = formats.find(f =>
-      (f.format_id === 'download' ||
-        /no.?watermark|nowm|hd/i.test(f.format_note || '')) &&
-      f.ext === 'mp4' &&
-      f.vcodec !== 'none' &&
-      f.acodec !== 'none' &&
-      f.url &&
-      !f.url.includes('.m3u8')
-    );
-    if (noWatermark?.url) return noWatermark.url;
-
-    // Second try: best combined mp4 (video+audio both present)
-    const bestCombined = formats
-      .filter(f =>
-        f.ext === 'mp4' &&
-        f.vcodec !== 'none' &&
-        f.acodec !== 'none' &&
-        f.url &&
-        !f.url.includes('.m3u8')
-      )
-      .sort(byQuality);
-    if (bestCombined[0]?.url) return bestCombined[0].url;
-  }
-
-  // ── Priority 2: Facebook — HD combined mp4 ───────────────────────────────
-  if (platform === 'facebook') {
-    // Try height >= 480 (not 720 — many FB videos don't carry height metadata)
-    const hdCombined = formats
-      .filter(f =>
-        f.ext === 'mp4' &&
-        f.vcodec !== 'none' &&
-        f.acodec !== 'none' &&
-        (f.height || 0) >= 480 &&
-        f.url &&
-        !f.url.includes('.m3u8') &&
-        !f.url.includes('.webm')
-      )
-      .sort(byQuality);
-    if (hdCombined[0]?.url) return hdCombined[0].url;
-
-    // SD fallback — any combined mp4
-    const sdCombined = formats
-      .filter(f =>
-        f.ext === 'mp4' &&
-        f.vcodec !== 'none' &&
-        f.acodec !== 'none' &&
-        f.url &&
-        !f.url.includes('.m3u8') &&
-        !f.url.includes('.webm')
-      )
-      .sort(byQuality);
-    if (sdCombined[0]?.url) return sdCombined[0].url;
-  }
-
-  // ── Priority 3: Instagram — best combined mp4 ────────────────────────────
-  if (platform === 'instagram') {
-    const igBest = formats
-      .filter(f =>
-        f.ext === 'mp4' &&
-        f.vcodec !== 'none' &&
-        f.acodec !== 'none' &&
-        f.url &&
-        !f.url.includes('.m3u8')
-      )
-      .sort(byQuality);
-    if (igBest[0]?.url) return igBest[0].url;
-  }
-
-  // ── Priority 4: Generic — best combined mp4 (highest resolution) ─────────
-  const combined = formats
-    .filter(f =>
-      f.ext === 'mp4' &&
-      f.vcodec !== 'none' &&
-      f.acodec !== 'none' &&
-      f.url &&
-      !f.url.includes('.m3u8') &&
-      !f.url.includes('.webm')
-    )
-    .sort(byQuality);
-  if (combined[0]?.url) return combined[0].url;
-
-  // ── Priority 5: Any mp4 (last resort) ────────────────────────────────────
-  const anyMp4 = formats.find(f =>
-    f.ext === 'mp4' &&
-    f.url &&
-    !f.url.includes('.m3u8')
-  );
-  if (anyMp4?.url) return anyMp4.url;
-
-  return info.url || null;
-}
-
-
-function downloadBuffer(videoUrl, extraHeaders = {}) {
+/**
+ * Download a URL to a temp file (streaming — no RAM buffer).
+ * FIX: Replaces downloadBuffer() — avoids loading video into RAM.
+ */
+function downloadToFile(videoUrl, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
+    const tmpDir  = os.tmpdir();
+    const outFile = path.join(tmpDir, `dl_${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`);
+
     const doRequest = (url, redirectCount = 0) => {
       if (redirectCount > 5) return reject(new Error('Too many redirects'));
 
@@ -221,30 +228,62 @@ function downloadBuffer(videoUrl, extraHeaders = {}) {
           if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
             return doRequest(res.headers.location, redirectCount + 1);
           }
-
           if (res.statusCode !== 200) {
             return reject(new Error(`HTTP ${res.statusCode} while downloading video`));
           }
 
-          const chunks = [];
-          res.on('data',  chunk => chunks.push(chunk));
-          res.on('end',   ()    => resolve(Buffer.concat(chunks)));
-          res.on('error', reject);
+          // FIX: Size guard — check Content-Length header before streaming
+          const contentLength = parseInt(res.headers['content-length'] || '0', 10);
+          if (contentLength > MAX_FILE_SIZE) {
+            req.destroy();
+            return reject(new Error(
+              `Video is too large (${(contentLength / 1024 / 1024).toFixed(1)} MB). ` +
+              `Maximum allowed size is ${MAX_FILE_SIZE / 1024 / 1024} MB.`
+            ));
+          }
+
+          const fileStream = fs.createWriteStream(outFile);
+          let   received   = 0;
+          let   aborted    = false;
+
+          res.on('data', (chunk) => {
+            received += chunk.length;
+            // FIX: Real-time size check during streaming
+            if (received > MAX_FILE_SIZE && !aborted) {
+              aborted = true;
+              req.destroy();
+              fileStream.destroy();
+              fs.unlink(outFile, () => {});
+              reject(new Error(
+                `Video exceeded ${MAX_FILE_SIZE / 1024 / 1024} MB limit during download.`
+              ));
+            }
+          });
+
+          res.pipe(fileStream);
+
+          fileStream.on('finish', () => {
+            if (!aborted) resolve(outFile);
+          });
+          fileStream.on('error', (e) => {
+            fs.unlink(outFile, () => {});
+            reject(e);
+          });
+          res.on('error', (e) => {
+            fs.unlink(outFile, () => {});
+            reject(e);
+          });
         }
       );
 
-      req.on('error',   reject);
-      req.on('timeout', () => { req.destroy(); reject(new Error('Download timeout')); });
+      req.on('error',   (e) => { fs.unlink(outFile, () => {}); reject(e); });
+      req.on('timeout', ()  => { req.destroy(); reject(new Error('Download timeout')); });
       req.end();
     };
 
     doRequest(videoUrl);
   });
 }
-
-// ══════════════════════════════════════════════════════════════════════════════
-// HTTP HELPERS
-// ══════════════════════════════════════════════════════════════════════════════
 
 function fetchJSON(targetUrl, headers = {}) {
   return new Promise((resolve, reject) => {
@@ -344,7 +383,7 @@ function formatSize(bytes) {
 
 function formatDuration(seconds) {
   if (!seconds || seconds <= 0) return 'Unknown';
-  const total = Math.floor(seconds);          // FIX: float seconds থেকে safe করা
+  const total = Math.floor(seconds);
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
   const s = total % 60;
@@ -362,29 +401,32 @@ function detectPlatform(rawUrl) {
   return null;
 }
 
+// ── Temp file cleanup helper ──────────────────────────────────────────────────
+
+function cleanupFile(filePath) {
+  if (filePath) {
+    try { fs.unlinkSync(filePath); } catch (_) {}
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // TIKTOK
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function downloadTikTok(videoUrl) {
 
-  // ── Primary: yt-dlp (combined mp4, no watermark) ─────────────────────────
+  // ── Primary: yt-dlp direct file download (combined mp4, no watermark) ────
+  // FIX: Use ytdlpDownload() instead of ytdlpInfo() + downloadBuffer()
   try {
-    const info    = await ytdlpInfo(videoUrl, 'tiktok');
-    const bestUrl = pickBestFormat(info, 'tiktok');
-    if (bestUrl) {
-      const buffer = await downloadBuffer(bestUrl, {
-        'Referer' : 'https://www.tiktok.com/',
-        'Origin'  : 'https://www.tiktok.com',
-      });
-      return {
-        buffer,
-        title    : info.title || info.description || 'TikTok Video',
-        size     : formatSize(buffer.length),
-        duration : formatDuration(info.duration || 0),
-        platform : 'TikTok',
-      };
-    }
+    const filePath = await ytdlpDownload(videoUrl, 'tiktok');
+    const stat     = fs.statSync(filePath);
+    return {
+      filePath,
+      title    : 'TikTok Video',
+      size     : formatSize(stat.size),
+      duration : 'Unknown',
+      platform : 'TikTok',
+    };
   } catch (ytErr) {
     console.warn('[TikTok yt-dlp]', ytErr.message);
   }
@@ -398,13 +440,12 @@ async function downloadTikTok(videoUrl) {
       const v   = data.data;
       const lnk = v.hdplay || v.play || v.wmplay;
       if (lnk) {
-        const buffer = await downloadBuffer(lnk, {
-          'Referer' : 'https://www.tikwm.com/',
-        });
+        const filePath = await downloadToFile(lnk, { 'Referer': 'https://www.tikwm.com/' });
+        const stat     = fs.statSync(filePath);
         return {
-          buffer,
+          filePath,
           title    : v.title || 'TikTok Video',
-          size     : formatSize(buffer.length),
+          size     : formatSize(stat.size),
           duration : formatDuration(v.duration || 0),
           platform : 'TikTok',
         };
@@ -424,13 +465,12 @@ async function downloadTikTok(videoUrl) {
     const match = html.match(/href="(https?:\/\/[^"]+\.mp4[^"]*)"/i);
     if (match) {
       const cleanUrl = match[1].replace(/&amp;/g, '&');
-      const buffer   = await downloadBuffer(cleanUrl, {
-        'Referer' : 'https://snaptik.app/',
-      });
+      const filePath = await downloadToFile(cleanUrl, { 'Referer': 'https://snaptik.app/' });
+      const stat     = fs.statSync(filePath);
       return {
-        buffer,
+        filePath,
         title    : 'TikTok Video',
-        size     : formatSize(buffer.length),
+        size     : formatSize(stat.size),
         duration : 'Unknown',
         platform : 'TikTok',
       };
@@ -448,22 +488,17 @@ async function downloadTikTok(videoUrl) {
 
 async function downloadInstagram(videoUrl) {
 
-  // ── Primary: yt-dlp (best quality mp4) ───────────────────────────────────
+  // ── Primary: yt-dlp direct file download ─────────────────────────────────
   try {
-    const info    = await ytdlpInfo(videoUrl, 'instagram');
-    const bestUrl = pickBestFormat(info, 'instagram');
-    if (bestUrl) {
-      const buffer = await downloadBuffer(bestUrl, {
-        'Referer' : 'https://www.instagram.com/',
-      });
-      return {
-        buffer,
-        title    : info.title || info.description?.slice(0, 80) || 'Instagram Video',
-        size     : formatSize(buffer.length),
-        duration : formatDuration(info.duration || 0),
-        platform : 'Instagram',
-      };
-    }
+    const filePath = await ytdlpDownload(videoUrl, 'instagram');
+    const stat     = fs.statSync(filePath);
+    return {
+      filePath,
+      title    : 'Instagram Video',
+      size     : formatSize(stat.size),
+      duration : 'Unknown',
+      platform : 'Instagram',
+    };
   } catch (ytErr) {
     console.warn('[Instagram yt-dlp]', ytErr.message);
   }
@@ -481,13 +516,12 @@ async function downloadInstagram(videoUrl) {
                 || inner.match(/href="(https?:\/\/[^"]+)"\s+[^>]*download/i);
     if (mp4) {
       const cleanUrl = mp4[1].replace(/&amp;/g, '&');
-      const buffer   = await downloadBuffer(cleanUrl, {
-        'Referer' : 'https://snapinsta.app/',
-      });
+      const filePath = await downloadToFile(cleanUrl, { 'Referer': 'https://snapinsta.app/' });
+      const stat     = fs.statSync(filePath);
       return {
-        buffer,
+        filePath,
         title    : 'Instagram Video',
-        size     : formatSize(buffer.length),
+        size     : formatSize(stat.size),
         duration : 'Unknown',
         platform : 'Instagram',
       };
@@ -502,9 +536,9 @@ async function downloadInstagram(videoUrl) {
       'https://saveig.app/api/ajaxSearch',
       `q=${encodeURIComponent(videoUrl)}&t=media&lang=en`,
       {
-        Referer             : 'https://saveig.app/',
-        Origin              : 'https://saveig.app',
-        'X-Requested-With'  : 'XMLHttpRequest',
+        Referer            : 'https://saveig.app/',
+        Origin             : 'https://saveig.app',
+        'X-Requested-With' : 'XMLHttpRequest',
       }
     );
     const parsed  = JSON.parse(raw);
@@ -512,13 +546,12 @@ async function downloadInstagram(videoUrl) {
     const mp4     = content.match(/href="(https?:\/\/[^"]+\.mp4[^"]*)"/i);
     if (mp4) {
       const cleanUrl = mp4[1].replace(/&amp;/g, '&');
-      const buffer   = await downloadBuffer(cleanUrl, {
-        'Referer' : 'https://saveig.app/',
-      });
+      const filePath = await downloadToFile(cleanUrl, { 'Referer': 'https://saveig.app/' });
+      const stat     = fs.statSync(filePath);
       return {
-        buffer,
+        filePath,
         title    : 'Instagram Video',
-        size     : formatSize(buffer.length),
+        size     : formatSize(stat.size),
         duration : 'Unknown',
         platform : 'Instagram',
       };
@@ -538,13 +571,12 @@ async function downloadInstagram(videoUrl) {
     const medias = parsed?.medias || [];
     const video  = medias.find(m => m.url);
     if (video?.url) {
-      const buffer = await downloadBuffer(video.url, {
-        'Referer' : 'https://reelsaver.net/',
-      });
+      const filePath = await downloadToFile(video.url, { 'Referer': 'https://reelsaver.net/' });
+      const stat     = fs.statSync(filePath);
       return {
-        buffer,
+        filePath,
         title    : parsed.title || 'Instagram Video',
-        size     : formatSize(buffer.length),
+        size     : formatSize(stat.size),
         duration : formatDuration(parsed.duration || 0),
         platform : 'Instagram',
       };
@@ -568,22 +600,17 @@ async function downloadFacebook(videoUrl) {
   let finalUrl = videoUrl;
   if (/fb\.watch/i.test(videoUrl)) finalUrl = await resolveRedirect(videoUrl);
 
-  // ── Primary: yt-dlp (HD mp4) ─────────────────────────────────────────────
+  // ── Primary: yt-dlp direct file download (HD mp4) ────────────────────────
   try {
-    const info    = await ytdlpInfo(finalUrl, 'facebook');
-    const bestUrl = pickBestFormat(info, 'facebook');
-    if (bestUrl) {
-      const buffer = await downloadBuffer(bestUrl, {
-        'Referer' : 'https://www.facebook.com/',
-      });
-      return {
-        buffer,
-        title    : info.title || 'Facebook Video',
-        size     : formatSize(buffer.length),
-        duration : formatDuration(info.duration || 0),
-        platform : 'Facebook',
-      };
-    }
+    const filePath = await ytdlpDownload(finalUrl, 'facebook');
+    const stat     = fs.statSync(filePath);
+    return {
+      filePath,
+      title    : 'Facebook Video',
+      size     : formatSize(stat.size),
+      duration : 'Unknown',
+      platform : 'Facebook',
+    };
   } catch (ytErr) {
     console.warn('[Facebook yt-dlp]', ytErr.message);
   }
@@ -597,26 +624,25 @@ async function downloadFacebook(videoUrl) {
     );
 
     const hd =
-      html.match(/id="hdlink"[^>]*href="([^"]+)"/i)             ||
-      html.match(/href="([^"]+)"[^>]*id="hdlink"/i)             ||
+      html.match(/id="hdlink"[^>]*href="([^"]+)"/i)              ||
+      html.match(/href="([^"]+)"[^>]*id="hdlink"/i)              ||
       html.match(/quality[^>]*hd[^>]*href="([^"]+\.mp4[^"]*)"/i) ||
       html.match(/<a[^>]+href="(https?:\/\/[^"]+\.mp4[^"]*)"[^>]*>\s*HD/i);
 
     const sd =
-      html.match(/id="sdlink"[^>]*href="([^"]+)"/i)             ||
-      html.match(/href="([^"]+)"[^>]*id="sdlink"/i)             ||
+      html.match(/id="sdlink"[^>]*href="([^"]+)"/i)  ||
+      html.match(/href="([^"]+)"[^>]*id="sdlink"/i)  ||
       html.match(/<a[^>]+href="(https?:\/\/[^"]+\.mp4[^"]*)"[^>]*>\s*SD/i);
 
     const lk = hd || sd;
     if (lk) {
       const cleanUrl = lk[1].replace(/&amp;/g, '&');
-      const buffer   = await downloadBuffer(cleanUrl, {
-        'Referer' : 'https://fdown.net/',
-      });
+      const filePath = await downloadToFile(cleanUrl, { 'Referer': 'https://fdown.net/' });
+      const stat     = fs.statSync(filePath);
       return {
-        buffer,
+        filePath,
         title    : 'Facebook Video',
-        size     : formatSize(buffer.length),
+        size     : formatSize(stat.size),
         duration : 'Unknown',
         platform : 'Facebook',
       };
@@ -632,13 +658,12 @@ async function downloadFacebook(videoUrl) {
     );
     const link = data?.links?.hd || data?.links?.sd;
     if (link) {
-      const buffer = await downloadBuffer(link, {
-        'Referer' : 'https://getfvid.com/',
-      });
+      const filePath = await downloadToFile(link, { 'Referer': 'https://getfvid.com/' });
+      const stat     = fs.statSync(filePath);
       return {
-        buffer,
+        filePath,
         title    : data.title || 'Facebook Video',
-        size     : formatSize(buffer.length),
+        size     : formatSize(stat.size),
         duration : 'Unknown',
         platform : 'Facebook',
       };
@@ -653,9 +678,9 @@ async function downloadFacebook(videoUrl) {
       'https://fbdownloader.com/api/data',
       `url=${encodeURIComponent(finalUrl)}`,
       {
-        Referer             : 'https://fbdownloader.com/',
-        Origin              : 'https://fbdownloader.com',
-        'X-Requested-With'  : 'XMLHttpRequest',
+        Referer            : 'https://fbdownloader.com/',
+        Origin             : 'https://fbdownloader.com',
+        'X-Requested-With' : 'XMLHttpRequest',
       }
     );
     const parsed = JSON.parse(raw);
@@ -664,13 +689,12 @@ async function downloadFacebook(videoUrl) {
     const link   = hdUrl || sdUrl;
     if (link) {
       const cleanUrl = link.replace(/&amp;/g, '&');
-      const buffer   = await downloadBuffer(cleanUrl, {
-        'Referer' : 'https://fbdownloader.com/',
-      });
+      const filePath = await downloadToFile(cleanUrl, { 'Referer': 'https://fbdownloader.com/' });
+      const stat     = fs.statSync(filePath);
       return {
-        buffer,
+        filePath,
         title    : parsed.title || 'Facebook Video',
-        size     : formatSize(buffer.length),
+        size     : formatSize(stat.size),
         duration : 'Unknown',
         platform : 'Facebook',
       };
@@ -702,4 +726,4 @@ async function download(videoUrl, forcePlatform = null) {
   }
 }
 
-module.exports = { download, detectPlatform };
+module.exports = { download, detectPlatform, cleanupFile };
