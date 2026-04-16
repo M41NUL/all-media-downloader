@@ -24,30 +24,42 @@ const urlModule     = require('url');
 const { URL_PATTERNS, DOWNLOAD_TIMEOUT } = require('./config');
 
 // ══════════════════════════════════════════════════════════════════════════════
-// YT-DLP ENGINE  (primary — works for Instagram, TikTok, Facebook)
+// YT-DLP ENGINE
 // ══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Run yt-dlp with --dump-json to extract video metadata + direct URL.
- * platform: 'tiktok' | 'instagram' | 'facebook' — used to pick best format flag
- * Returns parsed JSON object from yt-dlp output.
- */
 function ytdlpInfo(videoUrl, platform = 'generic') {
   return new Promise((resolve, reject) => {
 
-    
-    const formatArgs = platform === 'facebook'
-      ? ['--format', 'bestvideo[ext=mp4][height>=720]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best']
-      : [];
+    // FIX: Platform-specific format args for best quality
+    let formatArgs = [];
+    if (platform === 'tiktok') {
+      formatArgs = [
+        '--format',
+        'bestvideo[ext=mp4][vcodec!=none]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio/best[ext=mp4]/best',
+        '--merge-output-format', 'mp4',
+      ];
+    } else if (platform === 'facebook') {
+      formatArgs = [
+        '--format',
+        'bestvideo[ext=mp4][height>=720]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        '--merge-output-format', 'mp4',
+      ];
+    } else if (platform === 'instagram') {
+      formatArgs = [
+        '--format',
+        'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio/best[ext=mp4]/best',
+        '--merge-output-format', 'mp4',
+      ];
+    }
 
     const args = [
       '--dump-json',
       '--no-playlist',
+      '--playlist-items', '1',      // FIX: TikTok 21 video problem
       '--no-warnings',
       '--quiet',
       '--socket-timeout', '30',
       ...formatArgs,
-      // Instagram cookies support
       ...(process.env.INSTAGRAM_COOKIES
         ? ['--cookies', process.env.INSTAGRAM_COOKIES]
         : []
@@ -71,13 +83,13 @@ function ytdlpInfo(videoUrl, platform = 'generic') {
 function pickBestFormat(info, platform = 'generic') {
   if (!info) return null;
 
-  // Direct URL (no formats array) — return as-is
   if (info.url && !info.formats) return info.url;
 
   const formats = info.formats || [];
 
-  // ── Priority 1: TikTok no-watermark mp4 (video+audio combined) ──────────
+  // ── Priority 1: TikTok — video+audio combined mp4, no watermark ──────────
   if (platform === 'tiktok') {
+    // First try: no-watermark HD combined
     const noWatermark = formats.find(f =>
       (f.format_id === 'download' ||
         /no.?watermark|nowm|hd/i.test(f.format_note || '')) &&
@@ -88,25 +100,39 @@ function pickBestFormat(info, platform = 'generic') {
       !f.url.includes('.m3u8')
     );
     if (noWatermark?.url) return noWatermark.url;
+
+    // FIX: Second try — best combined mp4 (video+audio both present)
+    const bestCombined = formats
+      .filter(f =>
+        f.ext === 'mp4' &&
+        f.vcodec !== 'none' &&
+        f.acodec !== 'none' &&
+        f.url &&
+        !f.url.includes('.m3u8')
+      )
+      .sort((a, b) => (b.height || b.tbr || 0) - (a.height || a.tbr || 0));
+    if (bestCombined[0]?.url) return bestCombined[0].url;
   }
 
-  // ── Priority 2 (Facebook): Height >= 720 combined mp4 ────────────────────
+  // ── Priority 2: Facebook — HD combined mp4 ───────────────────────────────
   if (platform === 'facebook') {
+    // FIX: Try height >= 480 first (not 720, because many FB videos don't have height field)
     const hdCombined = formats
       .filter(f =>
         f.ext === 'mp4' &&
         f.vcodec !== 'none' &&
         f.acodec !== 'none' &&
-        (f.height || 0) >= 720 &&
+        (f.height || 0) >= 480 &&
         f.url &&
         !f.url.includes('.m3u8') &&
         !f.url.includes('.webm')
       )
-      .sort((a, b) => (b.height || 0) - (a.height || 0));
+      // FIX: Sort by height first, then bitrate as fallback
+      .sort((a, b) => (b.height || b.tbr || 0) - (a.height || a.tbr || 0));
 
     if (hdCombined[0]?.url) return hdCombined[0].url;
 
-    // Facebook SD fallback (combined)
+    // SD fallback
     const sdCombined = formats
       .filter(f =>
         f.ext === 'mp4' &&
@@ -116,12 +142,27 @@ function pickBestFormat(info, platform = 'generic') {
         !f.url.includes('.m3u8') &&
         !f.url.includes('.webm')
       )
-      .sort((a, b) => (b.height || 0) - (a.height || 0));
+      .sort((a, b) => (b.height || b.tbr || 0) - (a.height || a.tbr || 0));
 
     if (sdCombined[0]?.url) return sdCombined[0].url;
   }
 
-  // ── Priority 3: Best combined mp4 (video+audio, highest resolution) ──────
+  // ── Priority 3: Instagram — best combined mp4 ────────────────────────────
+  if (platform === 'instagram') {
+    const igBest = formats
+      .filter(f =>
+        f.ext === 'mp4' &&
+        f.vcodec !== 'none' &&
+        f.acodec !== 'none' &&
+        f.url &&
+        !f.url.includes('.m3u8')
+      )
+      .sort((a, b) => (b.height || b.tbr || 0) - (a.height || a.tbr || 0));
+
+    if (igBest[0]?.url) return igBest[0].url;
+  }
+
+  // ── Priority 4: Generic — best combined mp4 (highest resolution) ─────────
   const combined = formats
     .filter(f =>
       f.ext === 'mp4' &&
@@ -131,11 +172,11 @@ function pickBestFormat(info, platform = 'generic') {
       !f.url.includes('.m3u8') &&
       !f.url.includes('.webm')
     )
-    .sort((a, b) => (b.height || 0) - (a.height || 0));
+    .sort((a, b) => (b.height || b.tbr || 0) - (a.height || a.tbr || 0));
 
   if (combined[0]?.url) return combined[0].url;
 
-  // ── Priority 4: যেকোনো mp4 (last resort) ─────────────────────────────────
+  // ── Priority 5: Any mp4 (last resort) ────────────────────────────────────
   const anyMp4 = formats.find(f =>
     f.ext === 'mp4' &&
     f.url &&
@@ -143,7 +184,6 @@ function pickBestFormat(info, platform = 'generic') {
   );
   if (anyMp4?.url) return anyMp4.url;
 
-  // ── Fallback: info.url (original) ────────────────────────────────────────
   return info.url || null;
 }
 
@@ -174,7 +214,6 @@ function downloadBuffer(videoUrl, extraHeaders = {}) {
           timeout  : DOWNLOAD_TIMEOUT,
         },
         (res) => {
-          // Redirect handle
           if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
             return doRequest(res.headers.location, redirectCount + 1);
           }
@@ -200,7 +239,7 @@ function downloadBuffer(videoUrl, extraHeaders = {}) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// HTTP HELPERS  (used for API fallbacks)
+// HTTP HELPERS
 // ══════════════════════════════════════════════════════════════════════════════
 
 function fetchJSON(targetUrl, headers = {}) {
@@ -319,7 +358,8 @@ function detectPlatform(rawUrl) {
 
 async function downloadTikTok(videoUrl) {
 
-  // ── Primary: yt-dlp (no watermark mp4) ───────────────────────────────────
+  // ── Primary: yt-dlp (video+audio merged mp4) ──────────────────────────────
+  // FIX: ytdlpInfo now passes --merge-output-format mp4 + --playlist-items 1
   try {
     const info    = await ytdlpInfo(videoUrl, 'tiktok');
     const bestUrl = pickBestFormat(info, 'tiktok');
@@ -338,7 +378,7 @@ async function downloadTikTok(videoUrl) {
     }
   } catch (_) {}
 
-  // ── Fallback 1: tikwm.com ─────────────────────────────────────────────────
+  // ── Fallback 1: tikwm.com (HD no-watermark) ───────────────────────────────
   try {
     const data = await fetchJSON(
       `https://www.tikwm.com/api/?url=${encodeURIComponent(videoUrl)}&hd=1`
@@ -393,7 +433,8 @@ async function downloadTikTok(videoUrl) {
 
 async function downloadInstagram(videoUrl) {
 
-  // ── Primary: yt-dlp ───────────────────────────────────────────────────────
+  // ── Primary: yt-dlp (best quality mp4) ───────────────────────────────────
+  // FIX: ytdlpInfo now passes best video+audio format for Instagram
   try {
     const info    = await ytdlpInfo(videoUrl, 'instagram');
     const bestUrl = pickBestFormat(info, 'instagram');
@@ -497,14 +538,15 @@ async function downloadInstagram(videoUrl) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// FACEBOOK 
+// FACEBOOK
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function downloadFacebook(videoUrl) {
   let finalUrl = videoUrl;
   if (/fb\.watch/i.test(videoUrl)) finalUrl = await resolveRedirect(videoUrl);
 
-
+  // ── Primary: yt-dlp (HD mp4) ─────────────────────────────────────────────
+  // FIX: ytdlpInfo now requests HD format explicitly for Facebook
   try {
     const info    = await ytdlpInfo(finalUrl, 'facebook');
     const bestUrl = pickBestFormat(info, 'facebook');
@@ -524,7 +566,7 @@ async function downloadFacebook(videoUrl) {
     console.warn('[Facebook yt-dlp]', ytErr.message);
   }
 
-  
+  // ── Fallback 1: fdown.net (HD priority) ───────────────────────────────────
   try {
     const html = await fetchPost(
       'https://fdown.net/download.php',
@@ -532,7 +574,6 @@ async function downloadFacebook(videoUrl) {
       { Referer: 'https://fdown.net/', Origin: 'https://fdown.net' }
     );
 
-    
     const hd =
       html.match(/id="hdlink"[^>]*href="([^"]+)"/i) ||
       html.match(/href="([^"]+)"[^>]*id="hdlink"/i) ||
@@ -544,7 +585,7 @@ async function downloadFacebook(videoUrl) {
       html.match(/href="([^"]+)"[^>]*id="sdlink"/i) ||
       html.match(/<a[^>]+href="(https?:\/\/[^"]+\.mp4[^"]*)"[^>]*>\s*SD/i);
 
-    const lk = hd || sd; 
+    const lk = hd || sd;
     if (lk) {
       const cleanUrl = lk[1].replace(/&amp;/g, '&');
       const buffer   = await downloadBuffer(cleanUrl, {
@@ -560,12 +601,11 @@ async function downloadFacebook(videoUrl) {
     }
   } catch (_) {}
 
-  // ── Fallback 2: getfvid.com — HD priority explicit ────────────────────────
+  // ── Fallback 2: getfvid.com (HD priority) ────────────────────────────────
   try {
     const data = await fetchJSON(
       `https://getfvid.com/api?url=${encodeURIComponent(finalUrl)}&format=json`
     );
-    
     const link = data?.links?.hd || data?.links?.sd;
     if (link) {
       const buffer = await downloadBuffer(link, {
@@ -582,7 +622,6 @@ async function downloadFacebook(videoUrl) {
   } catch (_) {}
 
   // ── Fallback 3: fbdownloader.com ─────────────────────────────────────────
-  
   try {
     const raw  = await fetchPost(
       'https://fbdownloader.com/api/data',
@@ -594,7 +633,6 @@ async function downloadFacebook(videoUrl) {
       }
     );
     const parsed = JSON.parse(raw);
-    
     const hdUrl  = parsed?.hd || parsed?.links?.hd;
     const sdUrl  = parsed?.sd || parsed?.links?.sd || parsed?.url;
     const link   = hdUrl || sdUrl;
