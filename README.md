@@ -14,15 +14,11 @@
 [![GitHub Watchers](https://img.shields.io/github/watchers/M41NUL/all-media-downloader?style=for-the-badge&logo=github&color=blue)](https://github.com/M41NUL/all-media-downloader/watchers)
 [![Views](https://komarev.com/ghpvc/?username=M41NUL&repo=all-media-downloader&style=for-the-badge&color=blue)]()
 [![Clones](https://img.shields.io/badge/Repo-Clones-green?style=for-the-badge)]()
-[![Last Commit](https://img.shields.io/github/last-commit/M41NUL/all-media-downloader?style=for-the-badge&color=green)]()
 [![Top Language](https://img.shields.io/github/languages/top/M41NUL/all-media-downloader?style=for-the-badge)]()
 [![Code Size](https://img.shields.io/github/languages/code-size/M41NUL/all-media-downloader?style=for-the-badge)]()
-[![Issues](https://img.shields.io/github/issues/M41NUL/all-media-downloader?style=for-the-badge&color=red)]()
-[![Pull Requests](https://img.shields.io/github/issues-pr/M41NUL/all-media-downloader?style=for-the-badge&color=blueviolet)]()
 [![Deploy Status](https://img.shields.io/badge/Status-Live-success?style=for-the-badge)]()
 [![Uptime](https://img.shields.io/badge/Uptime-99%25-brightgreen?style=for-the-badge)]()
 [![Contributors](https://img.shields.io/github/contributors/M41NUL/all-media-downloader?style=for-the-badge)]()
-[![License](https://img.shields.io/github/license/M41NUL/all-media-downloader?style=for-the-badge)]()
 
 <br/>
 
@@ -369,6 +365,133 @@ Free to use, modify, and distribute with attribution.
 ```
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
+
+</div>
+
+
+---
+
+## ***❓ FAQ***
+
+<details>
+<summary><b>Q: Can the bot download private TikTok/Instagram videos?</b></summary>
+
+> ❌ No. Only **public** content can be downloaded. For private content, Instagram cookies are required (set `INSTAGRAM_COOKIES` in `.env`).
+
+</details>
+
+<details>
+<summary><b>Q: Video is not being sent — getting "File too large" error</b></summary>
+
+> Telegram Bot API has a **50 MB limit**. The bot cannot send videos larger than this. Please try a smaller video.
+
+</details>
+
+<details>
+<summary><b>Q: Bot is not responding / running slow</b></summary>
+
+> On Render free plan, the bot sleeps after **15 minutes of inactivity**. Use [UptimeRobot](https://uptimerobot.com) to ping every 10 minutes — keeps the bot always active.
+
+</details>
+
+<details>
+<summary><b>Q: TikTok video has a watermark</b></summary>
+
+> The bot always tries the no-watermark version first. If the watermark-free CDN is unavailable for some TikTok videos, the fallback API may return a watermarked version.
+
+</details>
+
+<details>
+<summary><b>Q: How do I deploy on my own server?</b></summary>
+
+> See the Local Development section. `npm install` → fill in `.env` → `npm start`. You will need a public HTTPS URL for the webhook (you can use ngrok).
+
+</details>
+
+<details>
+<summary><b>Q: How do I update yt-dlp?</b></summary>
+
+> Triggering a **Manual Deploy** on Render will re-run the `postinstall` hook and download the latest yt-dlp. Locally: `yt-dlp -U`.
+
+</details>
+
+---
+
+## ***📋 Changelog***
+
+<div align="center">
+
+| Version | Date | Changes |
+|:--|:--|:--|
+| **v2.0.0** | 2026-04 | 🔥 File-based download (no RAM buffer), 50MB size limit, yt-dlp timeout fix |
+| **v1.5.0** | 2026-03 | ✨ Live progress bar animation, send progress bar |
+| **v1.4.0** | 2026-02 | 🛠️ Admin panel, broadcast system, user stats |
+| **v1.3.0** | 2026-01 | 📊 JSON database, download count tracking |
+| **v1.2.0** | 2025-12 | 🔄 Fallback chain — tikwm, snaptik, snapinsta, fdown |
+| **v1.1.0** | 2025-11 | 🎯 Manual mode, platform selection buttons |
+| **v1.0.0** | 2025-10 | 🚀 Initial release — TikTok, Instagram, Facebook support |
+
+</div>
+
+---
+
+## ***🗺️ Roadmap***
+
+<div align="center">
+
+| Status | Feature |
+|:--:|:--|
+| ✅ | TikTok no-watermark download |
+| ✅ | Instagram Reels / Posts |
+| ✅ | Facebook public videos |
+| ✅ | Live progress bar |
+| ✅ | Admin panel + broadcast |
+| ✅ | File-based download (no RAM crash) |
+| 🔜 | **YouTube Shorts support** |
+| 🔜 | **Twitter / X video support** |
+| 🔜 | **Audio-only (MP3) download** |
+| 🔜 | **Inline query support** |
+| 🔜 | **Download history per user** |
+| 🔜 | **Multi-language support (EN/BN)** |
+| 💡 | **Pinterest video/image download** |
+| 💡 | **Batch download (multiple links)** |
+
+</div>
+
+> 💬 Want a feature? [Open a Feature Request](https://github.com/M41NUL/all-media-downloader/issues/new?template=feature_request.md&labels=enhancement)
+
+---
+
+## ***💖 Support the Project***
+
+<div align="center">
+
+*If this project helped you, please give it a ⭐ Star — that is the biggest support!*
+
+<br/>
+
+[![Ko-fi](https://img.shields.io/badge/☕_Buy_Me_a_Coffee-Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/mainulx)
+[![PayPal](https://img.shields.io/badge/💳_Donate-PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/mainulislam)
+[![Star Repo](https://img.shields.io/badge/⭐_Star_This_Repo-FFD700?style=for-the-badge&logo=github&logoColor=black)](https://github.com/M41NUL/all-media-downloader/stargazers)
+
+<br/>
+
+*Your support helps keep this project **free and open-source** forever!* 🙏
+
+</div>
+
+---
+
+## ***📈 GitHub Activity***
+
+<div align="center">
+
+[![GitHub Activity Graph](https://github-readme-activity-graph.vercel.app/graph?username=M41NUL&repo=all-media-downloader&theme=react-dark&hide_border=true&area=true)](https://github.com/M41NUL/all-media-downloader)
+
+<br/>
+
+[![GitHub Stats](https://github-readme-stats.vercel.app/api?username=M41NUL&show_icons=true&theme=react&hide_border=true&count_private=true)](https://github.com/M41NUL)
+[![Top Langs](https://github-readme-stats.vercel.app/api/top-langs/?username=M41NUL&layout=compact&theme=react&hide_border=true)](https://github.com/M41NUL)
 
 </div>
 
