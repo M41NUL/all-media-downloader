@@ -22,7 +22,7 @@ const { Telegraf } = require('telegraf');
 
 const config   = require('./config');
 const db       = require('./database');
-const { download, detectPlatform } = require('./downloader');
+const { download, detectPlatform, cleanupFile } = require('./downloader');
 const {
   MAIN_MENU, AUTO_MENU, AUTO_ON_MENU,
   PLATFORM_MENU, MANUAL_WAITING_MENU,
@@ -475,11 +475,12 @@ bot.on('text', async (ctx) => {
   // Delete progress message
   await safeDelete(ctx, chatId, statusMsg.message_id);
 
-  // ── Step 4: Send final video (buffer থেকে — URL নয়) ─────────────────────
+  // ── Step 4: Send final video (file থেকে — RAM buffer নয়) ──────────────────
+  // FIX: info.filePath use করা হচ্ছে — পুরো video RAM এ load হবে না
   try {
+    const { createReadStream } = require('fs');
     await ctx.replyWithVideo(
-      // ✅ buffer দিয়ে পাঠানো হচ্ছে — Telegram সরাসরি play করতে পারবে
-      { source: info.buffer, filename: 'video.mp4' },
+      { source: createReadStream(info.filePath), filename: 'video.mp4' },
       {
         caption      : resultCaption(info),
         parse_mode   : 'MarkdownV2',
@@ -487,12 +488,14 @@ bot.on('text', async (ctx) => {
       }
     );
   } catch (sendErr) {
-    // Buffer send failed — fallback: direct download link
     console.error(`[Send Error] ${sendErr.message}`);
     await ctx.replyWithMarkdownV2(
-      `${resultCaption(info)}\n\n⚠️ _Video too large to send directly\\._`,
+      `${resultCaption(info)}\n\n⚠️ _Video could not be sent\\._`,
       { reply_markup: RESULT_MENU.reply_markup }
     );
+  } finally {
+    // FIX: সবসময় temp file delete করা হচ্ছে — disk leak বন্ধ
+    cleanupFile(info.filePath);
   }
 });
 
