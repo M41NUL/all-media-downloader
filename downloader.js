@@ -40,22 +40,14 @@ const SOCKET_TIMEOUT  = '30';               // yt-dlp internal socket timeout (s
 
 /**
  * Run yt-dlp --dump-json to get metadata ONLY.
- * Format args here affect what format yt-dlp *reports* in the JSON,
- * but we do the actual download separately with ytdlpDownload().
  */
 function ytdlpInfo(videoUrl, platform = 'generic') {
   return new Promise((resolve, reject) => {
 
-    // ── Format selection per platform ─────────────────────────────────────
-    // FIX: Use format strings that guarantee combined audio+video
-    // so we always get a single URL with both streams (no merge needed).
     let formatStr;
     if (platform === 'tiktok') {
-      // TikTok CDN always serves combined mp4 — no merge needed
       formatStr = 'best[ext=mp4][vcodec!=none][acodec!=none]/best[ext=mp4]/best';
     } else if (platform === 'facebook') {
-      // FIX: height >= 720 fails when height metadata is null.
-      // Use tbr (bitrate) fallback chain instead.
       formatStr =
         'best[ext=mp4][vcodec!=none][acodec!=none][height>=720]/' +
         'best[ext=mp4][vcodec!=none][acodec!=none][height>=480]/' +
@@ -85,7 +77,6 @@ function ytdlpInfo(videoUrl, platform = 'generic') {
       videoUrl,
     ];
 
-    // FIX: Kill yt-dlp process after YTDLP_TIMEOUT — prevents zombie hangs
     const proc = execFile(
       'yt-dlp', args,
       { timeout: YTDLP_TIMEOUT, maxBuffer: 10 * 1024 * 1024 },
@@ -100,7 +91,6 @@ function ytdlpInfo(videoUrl, platform = 'generic') {
       }
     );
 
-    // Extra safety: hard-kill if still alive after timeout
     setTimeout(() => {
       try { proc.kill('SIGKILL'); } catch (_) {}
     }, YTDLP_TIMEOUT + 5000);
@@ -109,7 +99,6 @@ function ytdlpInfo(videoUrl, platform = 'generic') {
 
 /**
  * Download video directly to a temp file using yt-dlp.
- * FIX: Avoids loading the entire video into RAM (no Buffer).
  * Returns the temp file path — caller must delete it after use.
  */
 function ytdlpDownload(videoUrl, platform = 'generic') {
@@ -143,7 +132,7 @@ function ytdlpDownload(videoUrl, platform = 'generic') {
       '--quiet',
       '--socket-timeout', SOCKET_TIMEOUT,
       '--format', formatStr,
-      '--merge-output-format', 'mp4',   // ensure final container = mp4
+      '--merge-output-format', 'mp4',
       '--output', outFile,
       ...(process.env.INSTAGRAM_COOKIES
         ? ['--cookies', process.env.INSTAGRAM_COOKIES]
@@ -151,7 +140,6 @@ function ytdlpDownload(videoUrl, platform = 'generic') {
       videoUrl,
     ];
 
-    // FIX: Use spawn so we can kill the process reliably on timeout
     const proc   = spawn('yt-dlp', args);
     let   stderr = '';
     proc.stderr.on('data', d => { stderr += d.toString(); });
@@ -169,7 +157,6 @@ function ytdlpDownload(videoUrl, platform = 'generic') {
       if (!fs.existsSync(outFile)) {
         return reject(new Error('yt-dlp finished but output file not found'));
       }
-      // FIX: Check file size before returning — reject if > 50 MB
       const stat = fs.statSync(outFile);
       if (stat.size > MAX_FILE_SIZE) {
         fs.unlink(outFile, () => {});
@@ -194,7 +181,6 @@ function ytdlpDownload(videoUrl, platform = 'generic') {
 
 /**
  * Download a URL to a temp file (streaming — no RAM buffer).
- * FIX: Replaces downloadBuffer() — avoids loading video into RAM.
  */
 function downloadToFile(videoUrl, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
@@ -232,7 +218,6 @@ function downloadToFile(videoUrl, extraHeaders = {}) {
             return reject(new Error(`HTTP ${res.statusCode} while downloading video`));
           }
 
-          // FIX: Size guard — check Content-Length header before streaming
           const contentLength = parseInt(res.headers['content-length'] || '0', 10);
           if (contentLength > MAX_FILE_SIZE) {
             req.destroy();
@@ -248,7 +233,6 @@ function downloadToFile(videoUrl, extraHeaders = {}) {
 
           res.on('data', (chunk) => {
             received += chunk.length;
-            // FIX: Real-time size check during streaming
             if (received > MAX_FILE_SIZE && !aborted) {
               aborted = true;
               req.destroy();
@@ -415,16 +399,16 @@ function cleanupFile(filePath) {
 
 async function downloadTikTok(videoUrl) {
 
-  // ── Primary: yt-dlp direct file download (combined mp4, no watermark) ────
-  // FIX: Use ytdlpDownload() instead of ytdlpInfo() + downloadBuffer()
+  // ── Primary: yt-dlp (info + file download) ───────────────────────────────
   try {
+    const infoData = await ytdlpInfo(videoUrl, 'tiktok');
     const filePath = await ytdlpDownload(videoUrl, 'tiktok');
     const stat     = fs.statSync(filePath);
     return {
       filePath,
-      title    : 'TikTok Video',
+      title    : infoData.title    || 'TikTok Video',
       size     : formatSize(stat.size),
-      duration : 'Unknown',
+      duration : formatDuration(infoData.duration || 0),
       platform : 'TikTok',
     };
   } catch (ytErr) {
@@ -488,15 +472,16 @@ async function downloadTikTok(videoUrl) {
 
 async function downloadInstagram(videoUrl) {
 
-  // ── Primary: yt-dlp direct file download ─────────────────────────────────
+  // ── Primary: yt-dlp (info + file download) ───────────────────────────────
   try {
+    const infoData = await ytdlpInfo(videoUrl, 'instagram');
     const filePath = await ytdlpDownload(videoUrl, 'instagram');
     const stat     = fs.statSync(filePath);
     return {
       filePath,
-      title    : 'Instagram Video',
+      title    : infoData.title    || 'Instagram Video',
       size     : formatSize(stat.size),
-      duration : 'Unknown',
+      duration : formatDuration(infoData.duration || 0),
       platform : 'Instagram',
     };
   } catch (ytErr) {
@@ -600,15 +585,16 @@ async function downloadFacebook(videoUrl) {
   let finalUrl = videoUrl;
   if (/fb\.watch/i.test(videoUrl)) finalUrl = await resolveRedirect(videoUrl);
 
-  // ── Primary: yt-dlp direct file download (HD mp4) ────────────────────────
+  // ── Primary: yt-dlp (info + file download) ───────────────────────────────
   try {
+    const infoData = await ytdlpInfo(finalUrl, 'facebook');
     const filePath = await ytdlpDownload(finalUrl, 'facebook');
     const stat     = fs.statSync(filePath);
     return {
       filePath,
-      title    : 'Facebook Video',
+      title    : infoData.title    || 'Facebook Video',
       size     : formatSize(stat.size),
-      duration : 'Unknown',
+      duration : formatDuration(infoData.duration || 0),
       platform : 'Facebook',
     };
   } catch (ytErr) {
