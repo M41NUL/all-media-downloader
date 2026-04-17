@@ -308,7 +308,7 @@ bot.action('result_new', async (ctx) => {
   }
 });
 
-// 🧹 Clear — delete final message, reset session, go to auto detect section
+
 bot.action('result_clear', async (ctx) => {
   await ctx.answerCbQuery('🧹 Cleared!');
   const sess = getSession(ctx.from.id);
@@ -339,7 +339,7 @@ bot.on('text', async (ctx) => {
 
   const textRaw = ctx.message.text;
 
-  // ✅ Allow admin & start command to pass
+  
   if (textRaw.startsWith('/')) {
     if (textRaw === '/admin' || textRaw === '/start') return;
     return;
@@ -395,11 +395,6 @@ bot.on('text', async (ctx) => {
   );
   await new Promise(r => setTimeout(r, 700));
 
-  // ── Step 2: Download + animated progress bar (race) ─────────────────────
-  //
-  // Strategy: run the real download and the bar animation in parallel.
-  // • If download finishes BEFORE animation → jump bar to 100% immediately.
-  // • If download FAILS → stop animation at current step, show error right away.
 
   await safeEdit(ctx, chatId, statusMsg.message_id,
     progressBar(0, '0 MB/s', 'download'),
@@ -440,7 +435,7 @@ bot.on('text', async (ctx) => {
       );
     }
 
-    // If animation finished but download hasn't resolved yet, wait for it
+    
     if (!info) {
       const winner = await downloadPromise;
       info = winner.result;
@@ -475,8 +470,7 @@ bot.on('text', async (ctx) => {
   // Delete progress message
   await safeDelete(ctx, chatId, statusMsg.message_id);
 
-  // ── Step 4: Send final video (file থেকে — RAM buffer নয়) ──────────────────
-  // FIX: info.filePath use করা হচ্ছে — পুরো video RAM এ load হবে না
+
   try {
     const { createReadStream } = require('fs');
     await ctx.replyWithVideo(
@@ -494,7 +488,7 @@ bot.on('text', async (ctx) => {
       { reply_markup: RESULT_MENU.reply_markup }
     );
   } finally {
-    // FIX: সবসময় temp file delete করা হচ্ছে — disk leak বন্ধ
+    
     cleanupFile(info.filePath);
   }
 });
