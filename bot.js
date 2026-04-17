@@ -515,11 +515,133 @@ const app = express();
 app.use(express.json());
 
 app.get('/', (_req, res) => {
-  res.json({
-    status : 'ok',
-    bot    : 'All Media Downloader',
-    dev    : 'Md. Mainul Islam (@mdmainulislaminfo)',
-  });
+  const uptime    = process.uptime();
+  const hours     = Math.floor(uptime / 3600);
+  const minutes   = Math.floor((uptime % 3600) / 60);
+  const seconds   = Math.floor(uptime % 60);
+  const uptimeStr = `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>All Media Downloader Bot</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      background: #0a0a0f;
+      color: #e2e8f0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    body::before, body::after {
+      content: '';
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.15;
+      animation: float 8s ease-in-out infinite;
+      pointer-events: none;
+    }
+    body::before {
+      width: 400px; height: 400px;
+      background: #6366f1;
+      top: -100px; left: -100px;
+    }
+    body::after {
+      width: 350px; height: 350px;
+      background: #06b6d4;
+      bottom: -100px; right: -100px;
+      animation-delay: -4s;
+    }
+    @keyframes float {
+      0%, 100% { transform: translate(0,0) scale(1); }
+      50%       { transform: translate(30px,30px) scale(1.05); }
+    }
+    .card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 24px;
+      padding: 48px 40px;
+      max-width: 480px;
+      width: 90%;
+      text-align: center;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+      position: relative;
+      z-index: 1;
+    }
+    .icon { font-size: 56px; margin-bottom: 16px; display: block; animation: pulse 3s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+    h1 { font-size: 22px; font-weight: 700; color: #f1f5f9; margin-bottom: 6px; }
+    .tagline { font-size: 13px; color: #64748b; margin-bottom: 28px; }
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 7px;
+      background: rgba(16,185,129,0.12);
+      border: 1px solid rgba(16,185,129,0.25);
+      color: #10b981; padding: 6px 16px; border-radius: 999px;
+      font-size: 13px; font-weight: 600; margin-bottom: 28px;
+    }
+    .dot { width:7px; height:7px; background:#10b981; border-radius:50%; animation: blink 1.5s ease-in-out infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 28px; }
+    .stat { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 14px 8px; }
+    .stat-value { font-size: 18px; font-weight: 700; color: #818cf8; margin-bottom: 3px; }
+    .stat-label { font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; }
+    .platforms { display: flex; justify-content: center; gap: 10px; margin-bottom: 28px; flex-wrap: wrap; }
+    .platform { padding: 7px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; border: 1px solid; }
+    .tiktok    { background: rgba(0,0,0,0.4);       border-color: rgba(255,255,255,0.15); color: #e2e8f0; }
+    .instagram { background: rgba(214,41,118,0.12);  border-color: rgba(214,41,118,0.3);  color: #f472b6; }
+    .facebook  { background: rgba(24,119,242,0.12);  border-color: rgba(24,119,242,0.3);  color: #60a5fa; }
+    .divider { border: none; border-top: 1px solid rgba(255,255,255,0.07); margin: 0 0 24px; }
+    .dev-info { display: flex; align-items: center; justify-content: center; gap: 12px; }
+    .avatar { width:40px; height:40px; border-radius:50%; background: linear-gradient(135deg,#6366f1,#06b6d4); display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
+    .dev-text { text-align: left; }
+    .dev-name { font-size: 14px; font-weight: 600; color: #e2e8f0; }
+    .dev-links { display: flex; gap: 8px; margin-top: 4px; }
+    .dev-links a { font-size: 12px; color: #64748b; text-decoration: none; transition: color 0.2s; }
+    .dev-links a:hover { color: #818cf8; }
+    .dev-links span { color: #334155; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="icon">🎬</span>
+    <h1>All Media Downloader</h1>
+    <p class="tagline">Telegram Bot · Video Downloader</p>
+    <div class="status-badge"><div class="dot"></div>System Online</div>
+    <div class="stats">
+      <div class="stat"><div class="stat-value">3</div><div class="stat-label">Platforms</div></div>
+      <div class="stat"><div class="stat-value">${uptimeStr}</div><div class="stat-label">Uptime</div></div>
+      <div class="stat"><div class="stat-value">v2.0.0</div><div class="stat-label">Version</div></div>
+    </div>
+    <div class="platforms">
+      <span class="platform tiktok">⚫ TikTok</span>
+      <span class="platform instagram">📸 Instagram</span>
+      <span class="platform facebook">📘 Facebook</span>
+    </div>
+    <hr class="divider"/>
+    <div class="dev-info">
+      <div class="avatar">👨‍💻</div>
+      <div class="dev-text">
+        <div class="dev-name">Md. Mainul Islam</div>
+        <div class="dev-links">
+          <a href="https://t.me/mdmainulislaminfo" target="_blank">Telegram</a>
+          <span>·</span>
+          <a href="https://github.com/M41NUL" target="_blank">GitHub</a>
+          <span>·</span>
+          <a href="https://t.me/mainul_x_official" target="_blank">Channel</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`);
 });
 
 const WEBHOOK_PATH = `/webhook/${config.BOT_TOKEN}`;
