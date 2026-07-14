@@ -3,15 +3,14 @@
  * All Media Downloader Bot - Database
  * ============================================
  * Developer : Md. Mainul Islam
- * Owner     : MAINUL - X
- * Telegram  : https://t.me/mdmainulislaminfo
+ * Owner     : CODEX-M41NUL
+ * Telegram  : t.me/mdmainulislaminfo
  * GitHub    : https://github.com/M41NUL
  * WhatsApp  : +8801308850528
- * Channel   : https://t.me/mainul_x_official
- * Group     : https://t.me/mainul_x_official_gc
- * Email     : githubmainul@gmail.com | devmainulislam@gmail.com
- * YouTube   : https://youtube.com/@mdmainulislaminfo
- * License   : MIT License
+ * Channel   : https://t.me/codexm41nul
+ * Group     : https://t.me/codex_m41nul
+ * Email     : devmainulislam@gmail.com
+ * YouTube   : https://youtube.com/@codexm41nul
  * ============================================
  */
 
@@ -40,7 +39,10 @@ function save(db) {
 function defaultSchema() {
   return {
     users     : {},   // { userId: { id, username, firstName, joinedAt, downloads } }
-    stats     : { total: 0, tiktok: 0, instagram: 0, facebook: 0 },
+    stats     : { total: 0, tiktok: 0, instagram: 0, facebook: 0, failed: 0 },
+    activity  : [],   // [{ platform, time (ISO), success }] — most recent first, capped
+    restarts  : 0,
+    firstBootAt: null,
   };
 }
 
@@ -89,7 +91,39 @@ function recordDownload(userId, platform) {
   // Increment per-user
   if (db.users[uid]) db.users[uid].downloads += 1;
 
+  // Log activity (cap at 100 most recent entries)
+  if (!db.activity) db.activity = [];
+  db.activity.unshift({ platform, time: new Date().toISOString(), success: true });
+  db.activity = db.activity.slice(0, 100);
+
   save(db);
+}
+
+/**
+ * Record a failed download attempt (for success-rate calculation).
+ * @param {'tiktok'|'instagram'|'facebook'|null} platform
+ */
+function recordFailure(platform) {
+  const db = load();
+  if (!db.stats.failed) db.stats.failed = 0;
+  db.stats.failed += 1;
+
+  if (!db.activity) db.activity = [];
+  db.activity.unshift({ platform: platform || null, time: new Date().toISOString(), success: false });
+  db.activity = db.activity.slice(0, 100);
+
+  save(db);
+}
+
+/**
+ * Record a bot process restart/boot. Call once on startup.
+ */
+function recordRestart() {
+  const db = load();
+  db.restarts = (db.restarts || 0) + 1;
+  if (!db.firstBootAt) db.firstBootAt = new Date().toISOString();
+  save(db);
+  return { restarts: db.restarts, firstBootAt: db.firstBootAt };
 }
 
 /**
@@ -109,6 +143,59 @@ function getStats() {
 }
 
 /**
+ * Return everything the status dashboard (public/index.html -> /api/stats) needs.
+ */
+function getDashboardStats() {
+  const db       = load();
+  const activity = db.activity || [];
+
+  const totalAttempts = db.stats.total + (db.stats.failed || 0);
+  const successRate   = totalAttempts > 0
+    ? Math.round((db.stats.total / totalAttempts) * 100)
+    : null;
+
+  // Last 7 days — count successful downloads per day
+  const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - i);
+    const next = new Date(d);
+    next.setDate(next.getDate() + 1);
+
+    const count = activity.filter(a => {
+      if (!a.success) return false;
+      const t = new Date(a.time).getTime();
+      return t >= d.getTime() && t < next.getTime();
+    }).length;
+
+    days.push({ label: dayLabels[d.getDay()], count });
+  }
+
+  const recentActivity = activity
+    .filter(a => a.success)
+    .slice(0, 5)
+    .map(a => ({ platform: a.platform, time: a.time }));
+
+  return {
+    status        : 'operational',
+    totalUsers    : Object.keys(db.users).length,
+    totalDownloads: db.stats.total,
+    byPlatform    : {
+      tiktok    : db.stats.tiktok,
+      instagram : db.stats.instagram,
+      facebook  : db.stats.facebook,
+    },
+    successRate,
+    last7Days     : days,
+    recentActivity,
+    restarts      : db.restarts || 0,
+    lastDeploy    : db.firstBootAt || null,
+  };
+}
+
+/**
  * Return all registered users as an array.
  */
 function getAllUsers() {
@@ -116,4 +203,7 @@ function getAllUsers() {
   return Object.values(db.users);
 }
 
-module.exports = { upsertUser, recordDownload, getStats, getAllUsers };
+module.exports = {
+  upsertUser, recordDownload, recordFailure, recordRestart,
+  getStats, getDashboardStats, getAllUsers,
+};

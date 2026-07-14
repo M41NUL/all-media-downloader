@@ -3,15 +3,14 @@
  * All Media Downloader Bot - Admin Panel
  * ============================================
  * Developer : Md. Mainul Islam
- * Owner     : MAINUL - X
- * Telegram  : https://t.me/mdmainulislaminfo
+ * Owner     : CODEX-M41NUL
+ * Telegram  : t.me/mdmainulislaminfo
  * GitHub    : https://github.com/M41NUL
  * WhatsApp  : +8801308850528
- * Channel   : https://t.me/mainul_x_official
- * Group     : https://t.me/mainul_x_official_gc
- * Email     : githubmainul@gmail.com | devmainulislam@gmail.com
- * YouTube   : https://youtube.com/@mdmainulislaminfo
- * License   : MIT License
+ * Channel   : https://t.me/codexm41nul
+ * Group     : https://t.me/codex_m41nul
+ * Email     : devmainulislam@gmail.com
+ * YouTube   : https://youtube.com/@codexm41nul
  * ============================================
  */
 

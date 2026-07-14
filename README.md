@@ -26,7 +26,6 @@
 [![Telegraf](https://img.shields.io/badge/Telegraf-4.x-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://telegraf.js.org)
 [![yt-dlp](https://img.shields.io/badge/yt--dlp-Engine-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://github.com/yt-dlp/yt-dlp)
 [![Deploy on Render](https://img.shields.io/badge/Deploy-Render-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://render.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
 
 <br/>
 
@@ -79,7 +78,8 @@
 | 📘 **Facebook** | Public videos |
 | 🔍 **Auto Detect** | Paste any link — platform auto-detected |
 | 🎯 **Manual Mode** | Pick platform manually |
-| 📊 **Live Progress Bar** | Real-time `[██████░░░░] 60%` animation |
+| 📊 **Real Progress Bar** | Live `[██████░░░░] 62%` with real size & speed — no fake animation |
+| 📋 **Full Caption** | Full title always shown — branding auto-shrinks to fit Telegram's 1024-char limit |
 | 🧹 **Clean Chat** | Auto-deletes messages — only final video stays |
 | 📋 **Copy Title** | Tap video title to copy instantly |
 | 🛠️ **Admin Panel** | `/admin` — user stats, download counts, broadcast |
@@ -98,12 +98,14 @@
 ```
 📦 all-media-downloader/
 ├── 🤖 bot.js               — Main entry, Telegraf bot + Express webhook server
-├── ⬇️  downloader.js        — yt-dlp engine + API fallback chain
+├── ⬇️  downloader.js        — yt-dlp engine + API fallback chain (real-time progress)
 ├── 🎛️  buttons.js           — Inline keyboards & MarkdownV2 message templates
 ├── 🛠️  admin.js             — /admin panel, stats, broadcast system
 ├── 💾 database.js           — JSON-based user & download persistence
 ├── ⚙️  config.js            — Central config, constants, yt-dlp PATH injection
 ├── 📦 install-ytdlp.js      — Auto-downloads yt-dlp binary on deploy
+├── 🌐 public/
+│   └── index.html          — Status/uptime landing page (served at "/")
 ├── 📄 package.json
 ├── 🔒 .env.example
 └── 🙈 .gitignore
@@ -261,18 +263,22 @@ Anyone can download and use it for their own bot project.
 4. Receive your video ✅
 ```
 
-### ***📊 Live Progress***
+### ***📊 Live Progress (Real-Time)***
 ```
 🔄 Checking link...
 📡 Extracting video information...
 
 ⬇️ Downloading Video...
-[████████░░░░░░░░] 55%
-🚀 Speed: 2.3 MB/s
+[██████████░░░░░░] 62%
+📦 6.2 MB / 10.0 MB
+🚀 Speed: 2.20 MB/s
 
 📤 Sending Video...
-[████████████░░░░] 75%
+[███████████████░] 95%
+📦 9.5 MB / 10.0 MB
+🚀 Speed: 1.85 MB/s
 ```
+> Progress is calculated from **real bytes downloaded/uploaded** — not a fake animation.
 
 ---
 
@@ -329,7 +335,7 @@ git push origin feature/AmazingFeature
 <img src="https://github.com/M41NUL.png" width="100" style="border-radius:50%"/>
 
 ### ***Md. Mainul Islam***
-#### ***MAINUL - X***
+#### ***CODEX-M41NUL***
 
 *Full-Stack Developer & Bot Creator*
 
@@ -337,36 +343,21 @@ git push origin feature/AmazingFeature
 
 [![Telegram](https://img.shields.io/badge/Telegram-@mdmainulislaminfo-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/mdmainulislaminfo)
 [![GitHub](https://img.shields.io/badge/GitHub-M41NUL-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/M41NUL)
-[![YouTube](https://img.shields.io/badge/YouTube-mdmainulislaminfo-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtube.com/@mdmainulislaminfo)
+[![YouTube](https://img.shields.io/badge/YouTube-codexm41nul-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtube.com/@codexm41nul)
 [![WhatsApp](https://img.shields.io/badge/WhatsApp-+8801308850528-25D366?style=for-the-badge&logo=whatsapp&logoColor=white)](https://wa.me/8801308850528)
 
 <br/>
 
-[![Channel](https://img.shields.io/badge/📢_Channel-mainul__x__official-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/mainul_x_official)
-[![Group](https://img.shields.io/badge/👥_Group-mainul__x__official__gc-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/mainul_x_official_gc)
+[![Channel](https://img.shields.io/badge/📢_Channel-codexm41nul-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/codexm41nul)
+[![Group](https://img.shields.io/badge/👥_Group-codex__m41nul-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/codex_m41nul)
 
 <br/>
 
-📧 **Email:** [githubmainul@gmail.com](mailto:githubmainul@gmail.com) • [devmainulislam@gmail.com](mailto:devmainulislam@gmail.com)
+📧 **Email:** [devmainulislam@gmail.com](mailto:devmainulislam@gmail.com)
 
 </div>
 
 ---
-
-## ***📜 License***
-
-<div align="center">
-
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
-
-```
-MIT License — © 2026 Md. Mainul Islam (MAINUL-X)
-Free to use, modify, and distribute with attribution.
-```
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
-
-</div>
 
 
 ---
@@ -423,6 +414,7 @@ Free to use, modify, and distribute with attribution.
 
 | Version | Date | Changes |
 |:--|:--|:--|
+| **v2.1.0** | 2026-07 | 📊 Real-time byte-based progress (download + upload), full-caption fix (1024-char safe), live status dashboard, multi-tier download fallback caption |
 | **v2.0.0** | 2026-04 | 🔥 File-based download (no RAM buffer), 50MB size limit, yt-dlp timeout fix |
 | **v1.5.0** | 2026-03 | ✨ Live progress bar animation, send progress bar |
 | **v1.4.0** | 2026-02 | 🛠️ Admin panel, broadcast system, user stats |
@@ -509,6 +501,6 @@ Free to use, modify, and distribute with attribution.
 
 ***Made with by [Md. Mainul Islam](https://github.com/M41NUL)***
 
-*© 2026 MAINUL - X · MIT License*
+*© 2026 CODEX-M41NUL*
 
 </div>

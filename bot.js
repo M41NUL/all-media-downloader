@@ -3,21 +3,21 @@
  * All Media Downloader Bot - Main
  * ============================================
  * Developer : Md. Mainul Islam
- * Owner     : MAINUL - X
- * Telegram  : https://t.me/mdmainulislaminfo
+ * Owner     : CODEX-M41NUL
+ * Telegram  : t.me/mdmainulislaminfo
  * GitHub    : https://github.com/M41NUL
  * WhatsApp  : +8801308850528
- * Channel   : https://t.me/mainul_x_official
- * Group     : https://t.me/mainul_x_official_gc
- * Email     : githubmainul@gmail.com | devmainulislam@gmail.com
- * YouTube   : https://youtube.com/@mdmainulislaminfo
- * License   : MIT License
+ * Channel   : https://t.me/codexm41nul
+ * Group     : https://t.me/codex_m41nul
+ * Email     : devmainulislam@gmail.com
+ * YouTube   : https://youtube.com/@codexm41nul
  * ============================================
  */
 
 'use strict';
 
 const express      = require('express');
+const path         = require('path');
 const { Telegraf } = require('telegraf');
 
 const config   = require('./config');
@@ -87,18 +87,11 @@ async function safeEdit(ctx, chatId, msgId, text, extra = {}) {
   } catch (_) { return false; }
 }
 
-/**
- * Animate a progress bar by editing the status message step by step.
- * steps: [[percent, speedLabel?], ...]
- */
-async function animateProgress(ctx, chatId, msgId, steps, type = 'download') {
-  const { STEP_INTERVAL_MS } = config.PROGRESS;
-  for (const [pct, speed] of steps) {
-    await safeEdit(ctx, chatId, msgId, progressBar(pct, speed, type), {
-      parse_mode: 'MarkdownV2',
-    });
-    await new Promise(r => setTimeout(r, STEP_INTERVAL_MS));
-  }
+/** Format bytes as a short MB/KB label, e.g. 6.2 MB */
+function fmtMB(bytes) {
+  if (!bytes || bytes <= 0) return '0 MB';
+  const mb = bytes / (1024 * 1024);
+  return mb >= 0.1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -220,10 +213,9 @@ bot.action('auto_on', async (ctx) => {
   try {
     await ctx.editMessageText(autoOnText(), {
       parse_mode   : 'MarkdownV2',
-      reply_markup : AUTO_ON_MENU.reply_markup,
     });
   } catch (_) {
-    await ctx.replyWithMarkdownV2(autoOnText(), AUTO_ON_MENU);
+    await ctx.replyWithMarkdownV2(autoOnText());
   }
 });
 
@@ -296,7 +288,7 @@ bot.action('result_new', async (ctx) => {
 
   if (sess.mode === 'auto') {
     // Re-show Auto ON prompt
-    await ctx.replyWithMarkdownV2(autoOnText(), AUTO_ON_MENU);
+    await ctx.replyWithMarkdownV2(autoOnText());
   } else if (sess.mode === 'manual' && sess.platform) {
     const label = sess.platform.charAt(0).toUpperCase() + sess.platform.slice(1);
     await ctx.replyWithMarkdownV2(manualSelectedText(label), MANUAL_WAITING_MENU);
@@ -397,57 +389,36 @@ bot.on('text', async (ctx) => {
 
 
   await safeEdit(ctx, chatId, statusMsg.message_id,
-    progressBar(0, '0 MB/s', 'download'),
+    progressBar(0, '0.00 MB/s', 'download'),
     { parse_mode: 'MarkdownV2' }
   );
 
-  // Wrap download so we can distinguish it from animation in Promise.race
-  const DOWNLOAD_DONE = Symbol('download_done');
-  const downloadPromise = download(text, sess.platform || null)
-    .then(result => ({ __tag: DOWNLOAD_DONE, result }));
-
-  // Animate bar step by step, but abort early if download resolves/rejects
-  const { STEP_INTERVAL_MS, DOWNLOAD_STEPS } = config.PROGRESS;
+  // ── Real download progress (from yt-dlp stdout / HTTP byte stream) ─────────
   let info;
+  let lastEditAt = 0;
+  const EDIT_THROTTLE_MS = 1200; // stay well under Telegram's edit rate limit
+
+  const onDownloadProgress = (pct, speed, downloaded, total) => {
+    const now = Date.now();
+    if (now - lastEditAt < EDIT_THROTTLE_MS) return;
+    lastEditAt = now;
+    const sizeLabel = total > 0 ? `${fmtMB(downloaded)} / ${fmtMB(total)}` : null;
+    safeEdit(ctx, chatId, statusMsg.message_id,
+      progressBar(pct === null ? 0 : pct, speed, 'download', sizeLabel),
+      { parse_mode: 'MarkdownV2' }
+    );
+  };
 
   try {
-    for (const [pct, speed] of DOWNLOAD_STEPS) {
-      // Race: whichever comes first — next bar tick OR download finishing
-      const winner = await Promise.race([
-        new Promise(r => setTimeout(() => r(null), STEP_INTERVAL_MS)),
-        downloadPromise,
-      ]);
-
-      if (winner && winner.__tag === DOWNLOAD_DONE) {
-        // Download finished before this step — snap bar to 100% and break
-        info = winner.result;
-        await safeEdit(ctx, chatId, statusMsg.message_id,
-          progressBar(100, '✓', 'download'),
-          { parse_mode: 'MarkdownV2' }
-        );
-        break;
-      }
-
-      // Normal tick — update bar
-      await safeEdit(ctx, chatId, statusMsg.message_id,
-        progressBar(pct, speed, 'download'),
-        { parse_mode: 'MarkdownV2' }
-      );
-    }
-
-    
-    if (!info) {
-      const winner = await downloadPromise;
-      info = winner.result;
-      await safeEdit(ctx, chatId, statusMsg.message_id,
-        progressBar(100, '✓', 'download'),
-        { parse_mode: 'MarkdownV2' }
-      );
-    }
-
+    info = await download(text, sess.platform || null, onDownloadProgress);
+    await safeEdit(ctx, chatId, statusMsg.message_id,
+      progressBar(100, '✓', 'download'),
+      { parse_mode: 'MarkdownV2' }
+    );
   } catch (err) {
     // Download failed — show error immediately
     console.error(`[Download Error] ${platform} | ${text} | ${err.message}`);
+    db.recordFailure(sess.platform || null);
     await safeEdit(ctx, chatId, statusMsg.message_id,
       errorText(err.message),
       { parse_mode: 'MarkdownV2' }
@@ -456,39 +427,77 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // ── Step 3: Send progress bar ─────────────────────────────────────────────
-  const sendSteps = config.PROGRESS.SEND_STEPS.map(p => [p]);
+  // ── Step 3: Send progress bar (real bytes uploaded to Telegram) ────────────
   await safeEdit(ctx, chatId, statusMsg.message_id,
-    progressBar(0, null, 'send'),
+    progressBar(0, '0.00 MB/s', 'send'),
     { parse_mode: 'MarkdownV2' }
   );
-  await animateProgress(ctx, chatId, statusMsg.message_id, sendSteps, 'send');
 
   // Record stat
   db.recordDownload(ctx.from.id, platform);
 
-  // Delete progress message
-  await safeDelete(ctx, chatId, statusMsg.message_id);
-
-
   try {
-    const { createReadStream } = require('fs');
+    const { createReadStream, statSync } = require('fs');
+    const { PassThrough }                = require('stream');
+
+    const totalBytes = statSync(info.filePath).size;
+    const fileStream  = createReadStream(info.filePath);
+    const trackedStream = new PassThrough();
+
+    let uploaded    = 0;
+    let sendLastEdit = 0;
+    const sendStart  = Date.now();
+
+    fileStream.on('data', (chunk) => {
+      uploaded += chunk.length;
+      const now = Date.now();
+      if (now - sendLastEdit >= EDIT_THROTTLE_MS) {
+        sendLastEdit = now;
+        const elapsedSec = (now - sendStart) / 1000;
+        const speedMBs   = elapsedSec > 0 ? (uploaded / 1024 / 1024) / elapsedSec : 0;
+        const pct        = totalBytes > 0 ? Math.min(99, Math.round((uploaded / totalBytes) * 100)) : 0;
+        const sizeLabel  = totalBytes > 0 ? `${fmtMB(uploaded)} / ${fmtMB(totalBytes)}` : null;
+        safeEdit(ctx, chatId, statusMsg.message_id,
+          progressBar(pct, `${speedMBs.toFixed(2)} MB/s`, 'send', sizeLabel),
+          { parse_mode: 'MarkdownV2' }
+        );
+      }
+    });
+
+    fileStream.pipe(trackedStream);
+
+    const { caption, truncated, fullTitle } = resultCaption(info);
+
     await ctx.replyWithVideo(
-      { source: createReadStream(info.filePath), filename: 'video.mp4' },
+      { source: trackedStream, filename: 'video.mp4' },
       {
-        caption      : resultCaption(info),
+        caption,
         parse_mode   : 'MarkdownV2',
         reply_markup : RESULT_MENU.reply_markup,
       }
     );
+
+    // Rare case: title alone exceeded Telegram's 1024-char caption limit
+    // and had to be trimmed — send the untouched full title separately.
+    if (truncated && fullTitle) {
+      await ctx.replyWithMarkdownV2(
+        `📋 *Full Title:*\n\`${escMd(fullTitle)}\``
+      );
+    }
+
+    await safeEdit(ctx, chatId, statusMsg.message_id,
+      progressBar(100, '✓', 'send'),
+      { parse_mode: 'MarkdownV2' }
+    );
   } catch (sendErr) {
     console.error(`[Send Error] ${sendErr.message}`);
+    const { caption: errCaption } = resultCaption(info);
     await ctx.replyWithMarkdownV2(
-      `${resultCaption(info)}\n\n⚠️ _Video could not be sent\\._`,
+      `${errCaption}\n\n⚠️ _Video could not be sent\\._`,
       { reply_markup: RESULT_MENU.reply_markup }
     );
   } finally {
-    
+    await safeDelete(ctx, chatId, statusMsg.message_id);
     cleanupFile(info.filePath);
   }
 });
@@ -513,135 +522,28 @@ bot.catch((err, ctx) => {
 
 const app = express();
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/', (_req, res) => {
-  const uptime    = process.uptime();
-  const hours     = Math.floor(uptime / 3600);
-  const minutes   = Math.floor((uptime % 3600) / 60);
-  const seconds   = Math.floor(uptime % 60);
-  const uptimeStr = `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+app.get('/api/stats', (_req, res) => {
+  const dash   = db.getDashboardStats();
+  const memMB  = process.memoryUsage().rss / 1024 / 1024;
 
-  res.send(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>All Media Downloader Bot</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      min-height: 100vh;
-      background: #0a0a0f;
-      color: #e2e8f0;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-    }
-    body::before, body::after {
-      content: '';
-      position: fixed;
-      border-radius: 50%;
-      filter: blur(80px);
-      opacity: 0.15;
-      animation: float 8s ease-in-out infinite;
-      pointer-events: none;
-    }
-    body::before {
-      width: 400px; height: 400px;
-      background: #6366f1;
-      top: -100px; left: -100px;
-    }
-    body::after {
-      width: 350px; height: 350px;
-      background: #06b6d4;
-      bottom: -100px; right: -100px;
-      animation-delay: -4s;
-    }
-    @keyframes float {
-      0%, 100% { transform: translate(0,0) scale(1); }
-      50%       { transform: translate(30px,30px) scale(1.05); }
-    }
-    .card {
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 24px;
-      padding: 48px 40px;
-      max-width: 480px;
-      width: 90%;
-      text-align: center;
-      backdrop-filter: blur(20px);
-      box-shadow: 0 25px 60px rgba(0,0,0,0.5);
-      position: relative;
-      z-index: 1;
-    }
-    .icon { font-size: 56px; margin-bottom: 16px; display: block; animation: pulse 3s ease-in-out infinite; }
-    @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
-    h1 { font-size: 22px; font-weight: 700; color: #f1f5f9; margin-bottom: 6px; }
-    .tagline { font-size: 13px; color: #64748b; margin-bottom: 28px; }
-    .status-badge {
-      display: inline-flex; align-items: center; gap: 7px;
-      background: rgba(16,185,129,0.12);
-      border: 1px solid rgba(16,185,129,0.25);
-      color: #10b981; padding: 6px 16px; border-radius: 999px;
-      font-size: 13px; font-weight: 600; margin-bottom: 28px;
-    }
-    .dot { width:7px; height:7px; background:#10b981; border-radius:50%; animation: blink 1.5s ease-in-out infinite; }
-    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
-    .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 28px; }
-    .stat { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 14px 8px; }
-    .stat-value { font-size: 18px; font-weight: 700; color: #818cf8; margin-bottom: 3px; }
-    .stat-label { font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; }
-    .platforms { display: flex; justify-content: center; gap: 10px; margin-bottom: 28px; flex-wrap: wrap; }
-    .platform { padding: 7px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; border: 1px solid; }
-    .tiktok    { background: rgba(0,0,0,0.4);       border-color: rgba(255,255,255,0.15); color: #e2e8f0; }
-    .instagram { background: rgba(214,41,118,0.12);  border-color: rgba(214,41,118,0.3);  color: #f472b6; }
-    .facebook  { background: rgba(24,119,242,0.12);  border-color: rgba(24,119,242,0.3);  color: #60a5fa; }
-    .divider { border: none; border-top: 1px solid rgba(255,255,255,0.07); margin: 0 0 24px; }
-    .dev-info { display: flex; align-items: center; justify-content: center; gap: 12px; }
-    .avatar { width:40px; height:40px; border-radius:50%; background: linear-gradient(135deg,#6366f1,#06b6d4); display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
-    .dev-text { text-align: left; }
-    .dev-name { font-size: 14px; font-weight: 600; color: #e2e8f0; }
-    .dev-links { display: flex; gap: 8px; margin-top: 4px; }
-    .dev-links a { font-size: 12px; color: #64748b; text-decoration: none; transition: color 0.2s; }
-    .dev-links a:hover { color: #818cf8; }
-    .dev-links span { color: #334155; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <span class="icon">🎬</span>
-    <h1>All Media Downloader</h1>
-    <p class="tagline">Telegram Bot · Video Downloader</p>
-    <div class="status-badge"><div class="dot"></div>System Online</div>
-    <div class="stats">
-      <div class="stat"><div class="stat-value">3</div><div class="stat-label">Platforms</div></div>
-      <div class="stat"><div class="stat-value">${uptimeStr}</div><div class="stat-label">Uptime</div></div>
-      <div class="stat"><div class="stat-value">v2.0.0</div><div class="stat-label">Version</div></div>
-    </div>
-    <div class="platforms">
-      <span class="platform tiktok">⚫ TikTok</span>
-      <span class="platform instagram">📸 Instagram</span>
-      <span class="platform facebook">📘 Facebook</span>
-    </div>
-    <hr class="divider"/>
-    <div class="dev-info">
-      <div class="avatar">👨‍💻</div>
-      <div class="dev-text">
-        <div class="dev-name">Md. Mainul Islam</div>
-        <div class="dev-links">
-          <a href="https://t.me/mdmainulislaminfo" target="_blank">Telegram</a>
-          <span>·</span>
-          <a href="https://github.com/M41NUL" target="_blank">GitHub</a>
-          <span>·</span>
-          <a href="https://t.me/mainul_x_official" target="_blank">Channel</a>
-        </div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`);
+  res.json({
+    status        : dash.status,
+    uptime        : process.uptime(),
+    users         : dash.totalUsers,
+    downloads     : dash.totalDownloads,
+    byPlatform    : dash.byPlatform,
+    successRate   : dash.successRate,
+    memoryMB      : memMB,
+    avgTimeSec    : null,
+    version       : 'v2.0.0',
+    last7Days     : dash.last7Days,
+    recentActivity: dash.recentActivity,
+    dailyLimit    : null,
+    restarts      : dash.restarts,
+    lastDeploy    : dash.lastDeploy,
+  });
 });
 
 const WEBHOOK_PATH = `/webhook/${config.BOT_TOKEN}`;
@@ -668,6 +570,7 @@ async function main() {
   console.log(`✅  Webhook set: ${webhookUrl}`);
 
   app.listen(port, () => {
+    db.recordRestart();
     console.log(`🚀  Server running on port ${port}`);
     console.log(`🤖  All Media Downloader is live!`);
     console.log(`👨‍💻  Developer: Md. Mainul Islam (@mdmainulislaminfo)`);

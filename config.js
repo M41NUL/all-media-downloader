@@ -3,15 +3,14 @@
  * All Media Downloader Bot - Config
  * ============================================
  * Developer : Md. Mainul Islam
- * Owner     : MAINUL - X
- * Telegram  : https://t.me/mdmainulislaminfo
+ * Owner     : CODEX-M41NUL
+ * Telegram  : t.me/mdmainulislaminfo
  * GitHub    : https://github.com/M41NUL
  * WhatsApp  : +8801308850528
- * Channel   : https://t.me/mainul_x_official
- * Group     : https://t.me/mainul_x_official_gc
- * Email     : githubmainul@gmail.com | devmainulislam@gmail.com
- * YouTube   : https://youtube.com/@mdmainulislaminfo
- * License   : MIT License
+ * Channel   : https://t.me/codexm41nul
+ * Group     : https://t.me/codex_m41nul
+ * Email     : devmainulislam@gmail.com
+ * YouTube   : https://youtube.com/@codexm41nul
  * ============================================
  */
 
@@ -38,16 +37,15 @@ module.exports = {
   // ── Developer info ─────────────────────────────────────────────────────────
   DEV: {
     name      : 'Md. Mainul Islam',
-    owner     : 'MAINUL - X',
-    telegram  : 'https://t.me/mdmainulislaminfo',
+    owner     : 'CODEX-M41NUL',
+    telegram  : 't.me/mdmainulislaminfo',
     handle    : '@mdmainulislaminfo',
     github    : 'https://github.com/M41NUL',
     whatsapp  : '+8801308850528',
-    channel   : 'https://t.me/mainul_x_official',
-    group     : 'https://t.me/mainul_x_official_gc',
-    email1    : 'githubmainul@gmail.com',
-    email2    : 'devmainulislam@gmail.com',
-    youtube   : 'https://youtube.com/@mdmainulislaminfo',
+    channel   : 'https://t.me/codexm41nul',
+    group     : 'https://t.me/codex_m41nul',
+    email1    : 'devmainulislam@gmail.com',
+    youtube   : 'https://youtube.com/@codexm41nul',
   },
 
   // ── Platforms ──────────────────────────────────────────────────────────────
@@ -76,12 +74,6 @@ module.exports = {
     BAR_LENGTH       : 16,
     FILLED_CHAR      : '█',
     EMPTY_CHAR       : '░',
-    DOWNLOAD_STEPS   : [
-      [10, '1.2 MB/s'], [25, '1.8 MB/s'], [40, '2.1 MB/s'],
-      [55, '2.3 MB/s'], [70, '2.5 MB/s'], [85, '2.4 MB/s'], [95, '2.2 MB/s'],
-    ],
-    SEND_STEPS       : [20, 40, 60, 75, 90],
-    STEP_INTERVAL_MS : 900,
   },
 
   // ── Timeouts & limits ─────────────────────────────────────────────────────

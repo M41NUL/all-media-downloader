@@ -3,15 +3,14 @@
  * All Media Downloader Bot - Buttons & Messages
  * ============================================
  * Developer : Md. Mainul Islam
- * Owner     : MAINUL - X
- * Telegram  : https://t.me/mdmainulislaminfo
+ * Owner     : CODEX-M41NUL
+ * Telegram  : t.me/mdmainulislaminfo
  * GitHub    : https://github.com/M41NUL
  * WhatsApp  : +8801308850528
- * Channel   : https://t.me/mainul_x_official
- * Group     : https://t.me/mainul_x_official_gc
- * Email     : githubmainul@gmail.com | devmainulislam@gmail.com
- * YouTube   : https://youtube.com/@mdmainulislaminfo
- * License   : MIT License
+ * Channel   : https://t.me/codexm41nul
+ * Group     : https://t.me/codex_m41nul
+ * Email     : devmainulislam@gmail.com
+ * YouTube   : https://youtube.com/@codexm41nul
  * ============================================
  */
 
@@ -195,15 +194,11 @@ function developerText() {
 📱 *Telegram:* [${escMd(DEV.handle)}](${DEV.telegram})
 💻 *GitHub:* [M41NUL](${DEV.github})
 📞 *WhatsApp:* ${escMd(DEV.whatsapp)}
-📧 *Email:*
-  • ${escMd(DEV.email1)}
-  • ${escMd(DEV.email2)}
-▶️ *YouTube:* [mdmainulislaminfo](${DEV.youtube})
+📧 *Email:* ${escMd(DEV.email1)}
+▶️ *YouTube:* [codexm41nul](${DEV.youtube})
 
-📢 *Channel:* [mainul\\_x\\_official](${DEV.channel})
-👥 *Group:* [mainul\\_x\\_official\\_gc](${DEV.group})
-
-📜 *License:* MIT License`
+📢 *Channel:* [codexm41nul](${DEV.channel})
+👥 *Group:* [codex\\_m41nul](${DEV.group})`
   );
 }
 
@@ -211,25 +206,30 @@ function developerText() {
 
 /**
  * Build a progress bar string.
- * @param {number} percent   0–100
- * @param {string} [speed]   optional speed label e.g. "2.3 MB/s"
+ * @param {number} percent      0–100
+ * @param {string} [speed]      optional speed label e.g. "2.3 MB/s"
  * @param {'download'|'send'} type
+ * @param {string} [sizeLabel]  optional "6.2 MB / 10 MB" style size line
  */
-function progressBar(percent, speed, type = 'download') {
+function progressBar(percent, speed, type = 'download', sizeLabel = null) {
   const { BAR_LENGTH, FILLED_CHAR, EMPTY_CHAR } = PROGRESS;
   const filled = Math.round((percent / 100) * BAR_LENGTH);
   const bar    = FILLED_CHAR.repeat(filled) + EMPTY_CHAR.repeat(BAR_LENGTH - filled);
+
+  const sizeLine  = sizeLabel ? `📦 ${escMd(sizeLabel)}\n` : '';
+  const speedLine = speed ? `🚀 Speed: ${escMd(speed)}` : '';
 
   if (type === 'download') {
     return (
 `⬇️ *Downloading Video\\.\\.\\.*
 \`[${bar}] ${percent}%\`
-${speed ? `🚀 Speed: ${escMd(speed)}` : ''}`
+${sizeLine}${speedLine}`
     );
   }
   return (
 `📤 *Sending Video\\.\\.\\.*
-\`[${bar}] ${percent}%\``
+\`[${bar}] ${percent}%\`
+${sizeLine}${speedLine}`
   );
 }
 
@@ -238,24 +238,61 @@ ${speed ? `🚀 Speed: ${escMd(speed)}` : ''}`
 /**
  * Caption sent WITH the video.
  * Title is rendered as inline-code so it's one-tap copyable.
+ *
+ * Telegram allows max 1024 characters in a video caption. The title must
+ * NEVER be cut — instead, if the full caption would exceed the limit,
+ * the Bot/Dev branding lines are progressively shortened/dropped until
+ * it fits, always keeping the title 100% intact.
+ *
+ * Only in the extreme case where the title ALONE (plus the basic info
+ * block) still exceeds 1024 chars, the title is trimmed with "..." and
+ * `truncated: true` is returned so the caller can send the full title
+ * as a separate follow-up text message.
+ *
+ * @returns {{ caption: string, truncated: boolean, fullTitle: string|null }}
  */
 function resultCaption(info) {
-  const title    = escMd(info.title    || 'Unknown');
+  const rawTitle = info.title || 'Unknown';
+  const title    = escMd(rawTitle);
   const platform = escMd(info.platform || 'Unknown');
   const size     = escMd(info.size     || 'Unknown');
   const duration = escMd(info.duration || 'Unknown');
 
-  return (
-`📋 *Title:* \`${title}\`
-
-🌐 *Platform:* ${platform}
+  const infoBlock =
+`🌐 *Platform:* ${platform}
 🎥 *Format:* MP4
 ⚖️ *Size:* ${size}
-⏱️ *Duration:* ${duration}
+⏱️ *Duration:* ${duration}`;
 
-🤖 *Bot:* [All Media Downloader](https://t.me/allmedia_downloaderx_bot)
-👨‍💻 *Dev:* ${escMd(DEV.handle)}`
-  );
+  const buildTitleBlock = (t) => `📋 *Title:* \`${t}\``;
+
+  // Tier 1: full branding (Bot + Dev links)
+  const brandFull =
+`🤖 *Bot:* [All Media Downloader](https://t.me/allmedia_downloaderx_bot)
+👨‍💻 *Dev:* [MAINUL ISLAM](https://${DEV.telegram})`;
+
+  // Tier 2: shortened branding (Dev only)
+  const brandShort = `👨‍💻 *Dev:* [MAINUL ISLAM](https://${DEV.telegram})`;
+
+  const CAPTION_LIMIT = 1024;
+  const titleBlock = buildTitleBlock(title);
+
+  let caption = `${titleBlock}\n\n${infoBlock}\n\n${brandFull}`;
+  if (caption.length <= CAPTION_LIMIT) return { caption, truncated: false, fullTitle: null };
+
+  caption = `${titleBlock}\n\n${infoBlock}\n\n${brandShort}`;
+  if (caption.length <= CAPTION_LIMIT) return { caption, truncated: false, fullTitle: null };
+
+  // Tier 3: no branding at all — title + info only (title still 100% intact)
+  caption = `${titleBlock}\n\n${infoBlock}`;
+  if (caption.length <= CAPTION_LIMIT) return { caption, truncated: false, fullTitle: null };
+
+  // Tier 4 (rare): title alone pushes it over the limit — trim with "..."
+  // and flag it so the full title can be sent as a follow-up message.
+  const overflow    = caption.length - CAPTION_LIMIT + 3; // +3 for the "..." we add
+  const trimmedTitle = title.slice(0, Math.max(0, title.length - overflow)) + '...';
+  caption = `${buildTitleBlock(trimmedTitle)}\n\n${infoBlock}`;
+  return { caption, truncated: true, fullTitle: rawTitle };
 }
 
 // ── Error message ─────────────────────────────────────────────────────────────

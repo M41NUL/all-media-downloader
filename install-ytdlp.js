@@ -3,10 +3,9 @@
  * All Media Downloader Bot - yt-dlp Installer
  * ============================================
  * Developer : Md. Mainul Islam
- * Owner     : MAINUL - X
- * Telegram  : https://t.me/mdmainulislaminfo
+ * Owner     : CODEX-M41NUL
+ * Telegram  : t.me/mdmainulislaminfo
  * GitHub    : https://github.com/M41NUL
- * License   : MIT License
  * ============================================
  *
  * This script runs automatically after `npm install` (postinstall hook).

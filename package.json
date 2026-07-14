@@ -1,13 +1,12 @@
 {
   "name": "all-media-downloader",
   "version": "1.0.0",
-  "description": "Telegram bot to download TikTok, Instagram & Facebook videos — by Md. Mainul Islam (MAINUL-X)",
+  "description": "Telegram bot to download TikTok, Instagram & Facebook videos — by Md. Mainul Islam (CODEX-M41NUL)",
   "author": {
     "name": "Md. Mainul Islam",
     "email": "devmainulislam@gmail.com",
     "url": "https://github.com/M41NUL"
   },
-  "license": "MIT",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
