@@ -212,25 +212,10 @@ function developerText() {
  * @param {string} [sizeLabel]  optional "6.2 MB / 10 MB" style size line
  */
 function progressBar(percent, speed, type = 'download', sizeLabel = null) {
-  const { BAR_LENGTH, FILLED_CHAR, EMPTY_CHAR } = PROGRESS;
-  const filled = Math.round((percent / 100) * BAR_LENGTH);
-  const bar    = FILLED_CHAR.repeat(filled) + EMPTY_CHAR.repeat(BAR_LENGTH - filled);
-
-  const sizeLine  = sizeLabel ? `📦 ${escMd(sizeLabel)}\n` : '';
-  const speedLine = speed ? `🚀 Speed: ${escMd(speed)}` : '';
-
   if (type === 'download') {
-    return (
-`⬇️ *Downloading Video\\.\\.\\.*
-\`[${bar}] ${percent}%\`
-${sizeLine}${speedLine}`
-    );
+    return `⬇️ *Downloading Video\\.\\.\\.*\n_Please wait\\.\\.\\._`;
   }
-  return (
-`📤 *Sending Video\\.\\.\\.*
-\`[${bar}] ${percent}%\`
-${sizeLine}${speedLine}`
-  );
+  return `📤 *Sending Video\\.\\.\\.*\n_Please wait\\.\\.\\._`;
 }
 
 // ── Final result caption ──────────────────────────────────────────────────────
@@ -307,6 +292,12 @@ _This message will be deleted in 3 seconds\\.\\.\\._`
   );
 }
 
+// ── Send-failure message (video downloaded but could not be delivered) ───────
+
+function sendFailedText() {
+  return `❌ *Video could not be sent\\.* Please try again\\.`;
+}
+
 // ── Settings text ─────────────────────────────────────────────────────────────
 
 function settingsText() {
@@ -341,6 +332,7 @@ module.exports = {
   progressBar,
   resultCaption,
   errorText,
+  sendFailedText,
   settingsText,
   // util
   escMd,

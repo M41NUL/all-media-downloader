@@ -18,6 +18,7 @@
 
 const express      = require('express');
 const path         = require('path');
+const os           = require('os');
 const { Telegraf } = require('telegraf');
 
 const config   = require('./config');
@@ -30,7 +31,7 @@ const {
   welcomeText, autoDetectMenuText, autoOnText, autoOffText,
   manualModeText, manualSelectedText,
   helpText, developerText, settingsText,
-  progressBar, resultCaption, errorText,
+  progressBar, resultCaption, errorText, sendFailedText,
   escMd,
 } = require('./buttons');
 const { registerAdmin, handleBroadcast } = require('./admin');
@@ -85,13 +86,6 @@ async function safeEdit(ctx, chatId, msgId, text, extra = {}) {
     await ctx.telegram.editMessageText(chatId, msgId, undefined, text, extra);
     return true;
   } catch (_) { return false; }
-}
-
-/** Format bytes as a short MB/KB label, e.g. 6.2 MB */
-function fmtMB(bytes) {
-  if (!bytes || bytes <= 0) return '0 MB';
-  const mb = bytes / (1024 * 1024);
-  return mb >= 0.1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -389,32 +383,16 @@ bot.on('text', async (ctx) => {
 
 
   await safeEdit(ctx, chatId, statusMsg.message_id,
-    progressBar(0, '0.00 MB/s', 'download'),
+    progressBar(0, null, 'download'),
     { parse_mode: 'MarkdownV2' }
   );
 
-  // ── Real download progress (from yt-dlp stdout / HTTP byte stream) ─────────
+  // ── Download the video ──────────────────────────────────────────────────
   let info;
-  let lastEditAt = 0;
-  const EDIT_THROTTLE_MS = 1200; // stay well under Telegram's edit rate limit
-
-  const onDownloadProgress = (pct, speed, downloaded, total) => {
-    const now = Date.now();
-    if (now - lastEditAt < EDIT_THROTTLE_MS) return;
-    lastEditAt = now;
-    const sizeLabel = total > 0 ? `${fmtMB(downloaded)} / ${fmtMB(total)}` : null;
-    safeEdit(ctx, chatId, statusMsg.message_id,
-      progressBar(pct === null ? 0 : pct, speed, 'download', sizeLabel),
-      { parse_mode: 'MarkdownV2' }
-    );
-  };
+  const downloadStartedAt = Date.now();
 
   try {
-    info = await download(text, sess.platform || null, onDownloadProgress);
-    await safeEdit(ctx, chatId, statusMsg.message_id,
-      progressBar(100, '✓', 'download'),
-      { parse_mode: 'MarkdownV2' }
-    );
+    info = await download(text, sess.platform || null, null);
   } catch (err) {
     // Download failed — show error immediately
     console.error(`[Download Error] ${platform} | ${text} | ${err.message}`);
@@ -427,49 +405,41 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // ── Step 3: Send progress bar (real bytes uploaded to Telegram) ────────────
+  // ── Step 3: Sending video ────────────────────────────────────────────────
   await safeEdit(ctx, chatId, statusMsg.message_id,
-    progressBar(0, '0.00 MB/s', 'send'),
+    progressBar(0, null, 'send'),
     { parse_mode: 'MarkdownV2' }
   );
 
-  // Record stat
-  db.recordDownload(ctx.from.id, platform);
+  // Record stat (with how long the download took + file size, for avg-time/avg-speed stats)
+  const downloadDurationMs = Date.now() - downloadStartedAt;
+  const { existsSync: _exists, statSync: _stat } = require('fs');
+  let downloadedBytes = null;
+  try {
+    if (_exists(info.filePath)) downloadedBytes = _stat(info.filePath).size;
+  } catch (_) { /* ignore — speed just won't be recorded this time */ }
+  db.recordDownload(ctx.from.id, platform, downloadDurationMs, downloadedBytes);
 
   try {
-    const { createReadStream, statSync } = require('fs');
-    const { PassThrough }                = require('stream');
+    const { existsSync, statSync } = require('fs');
+
+    if (!existsSync(info.filePath)) {
+      throw new Error('Downloaded file is missing on disk.');
+    }
 
     const totalBytes = statSync(info.filePath).size;
-    const fileStream  = createReadStream(info.filePath);
-    const trackedStream = new PassThrough();
+    if (totalBytes <= 0) {
+      throw new Error('Downloaded file is empty.');
+    }
 
-    let uploaded    = 0;
-    let sendLastEdit = 0;
-    const sendStart  = Date.now();
-
-    fileStream.on('data', (chunk) => {
-      uploaded += chunk.length;
-      const now = Date.now();
-      if (now - sendLastEdit >= EDIT_THROTTLE_MS) {
-        sendLastEdit = now;
-        const elapsedSec = (now - sendStart) / 1000;
-        const speedMBs   = elapsedSec > 0 ? (uploaded / 1024 / 1024) / elapsedSec : 0;
-        const pct        = totalBytes > 0 ? Math.min(99, Math.round((uploaded / totalBytes) * 100)) : 0;
-        const sizeLabel  = totalBytes > 0 ? `${fmtMB(uploaded)} / ${fmtMB(totalBytes)}` : null;
-        safeEdit(ctx, chatId, statusMsg.message_id,
-          progressBar(pct, `${speedMBs.toFixed(2)} MB/s`, 'send', sizeLabel),
-          { parse_mode: 'MarkdownV2' }
-        );
-      }
-    });
-
-    fileStream.pipe(trackedStream);
-
+    // Send directly from the file path — Telegraf/Telegram handles the
+    // upload internally. Streaming through an extra PassThrough offered
+    // no benefit and could silently stall on slow connections, which is
+    // what caused "Video could not be sent" errors.
     const { caption, truncated, fullTitle } = resultCaption(info);
 
     await ctx.replyWithVideo(
-      { source: trackedStream, filename: 'video.mp4' },
+      { source: info.filePath, filename: 'video.mp4' },
       {
         caption,
         parse_mode   : 'MarkdownV2',
@@ -484,16 +454,11 @@ bot.on('text', async (ctx) => {
         `📋 *Full Title:*\n\`${escMd(fullTitle)}\``
       );
     }
-
-    await safeEdit(ctx, chatId, statusMsg.message_id,
-      progressBar(100, '✓', 'send'),
-      { parse_mode: 'MarkdownV2' }
-    );
   } catch (sendErr) {
     console.error(`[Send Error] ${sendErr.message}`);
-    const { caption: errCaption } = resultCaption(info);
+    db.recordFailure(sess.platform || null);
     await ctx.replyWithMarkdownV2(
-      `${errCaption}\n\n⚠️ _Video could not be sent\\._`,
+      sendFailedText(),
       { reply_markup: RESULT_MENU.reply_markup }
     );
   } finally {
@@ -524,6 +489,34 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Allow other developers to call our public, read-only API endpoints
+// directly from their own websites/apps (browser fetch, etc).
+app.use(['/api/stats', '/api/endpoints'], (_req, res, next) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  next();
+});
+
+// ── CPU usage (%) ────────────────────────────────────────────────────────────
+// Node has no built-in "instant CPU %", so we sample process.cpuUsage() over a
+// short window each time it's requested. This reflects actual load caused by
+// this process, normalized against available cores — good enough for a status
+// gauge without adding a dependency.
+let lastCpu = { time: Date.now(), usage: process.cpuUsage() };
+
+function getCpuPercent() {
+  const now       = Date.now();
+  const usage     = process.cpuUsage(lastCpu.usage); // delta since last sample
+  const elapsedMs = now - lastCpu.time;
+  lastCpu = { time: now, usage: process.cpuUsage() };
+
+  if (elapsedMs <= 0) return 0;
+  const usedMs   = (usage.user + usage.system) / 1000;
+  const cores    = os.cpus().length || 1;
+  const percent  = (usedMs / (elapsedMs * cores)) * 100;
+  return Math.max(0, Math.min(100, Math.round(percent * 10) / 10));
+}
+
 app.get('/api/stats', (_req, res) => {
   const dash   = db.getDashboardStats();
   const memMB  = process.memoryUsage().rss / 1024 / 1024;
@@ -536,13 +529,59 @@ app.get('/api/stats', (_req, res) => {
     byPlatform    : dash.byPlatform,
     successRate   : dash.successRate,
     memoryMB      : memMB,
-    avgTimeSec    : null,
-    version       : 'v2.0.0',
+    cpuPercent    : getCpuPercent(),
+    avgTimeSec    : dash.avgTimeSec,
+    avgSpeedKbps  : dash.avgSpeedKbps,
+    version       : 'v2.1.0',
     last7Days     : dash.last7Days,
     recentActivity: dash.recentActivity,
     dailyLimit    : null,
     restarts      : dash.restarts,
     lastDeploy    : dash.lastDeploy,
+  });
+});
+
+// ── Public API documentation (machine-readable) ─────────────────────────────
+// Lets other developers discover what this deployment exposes without
+// reading source code. Mirrors what's shown on the /public dashboard page.
+app.get('/api/endpoints', (_req, res) => {
+  const base = config.WEBHOOK_URL ? config.WEBHOOK_URL.replace(/\/$/, '') : '';
+  res.json({
+    baseUrl: base || 'https://all-media-downloader-4o3l.onrender.com',
+    endpoints: [
+      {
+        method     : 'GET',
+        path       : '/api/stats',
+        description: 'Public, read-only bot/server statistics — uptime, users, downloads, success rate, memory, CPU, avg download time & speed, last 7 days activity.',
+        auth       : 'none',
+        response   : {
+          status: 'string', uptime: 'number (seconds)', users: 'number',
+          downloads: 'number', byPlatform: '{ tiktok, instagram, facebook }',
+          successRate: 'number|null (percent)', memoryMB: 'number',
+          cpuPercent: 'number (percent, 0-100)', avgTimeSec: 'number|null',
+          avgSpeedKbps: 'number|null', version: 'string',
+          last7Days: '[{ label, count, avgTimeSec, successRate, percentOfWeek }]',
+          recentActivity: '[{ platform, time }]', dailyLimit: 'number|null',
+          restarts: 'number', lastDeploy: 'string|null (ISO date)',
+        },
+      },
+      {
+        method     : 'GET',
+        path       : '/api/endpoints',
+        description: 'This documentation endpoint.',
+        auth       : 'none',
+      },
+      {
+        method     : 'POST',
+        path       : `/webhook/:BOT_TOKEN`,
+        description: 'Telegram webhook — receives updates from Telegram only. Not usable directly by third parties (requires the bot\'s private token as the path segment, which Telegram alone is configured to call).',
+        auth       : 'Telegram-only (token is part of the URL, not shared)',
+      },
+    ],
+    notes: [
+      'There is currently no public media-download REST endpoint — downloads only happen through the Telegram bot itself.',
+      'All endpoints above are read-only and CORS-open; no API key required for /api/stats or /api/endpoints.',
+    ],
   });
 });
 

@@ -241,14 +241,14 @@
   .rate-sub{font-size:11.5px;color:var(--text-3);margin-top:2px;font-weight:500;}
   .stats-secondary{
     display:grid;
-    grid-template-columns:repeat(3,1fr);
+    grid-template-columns:repeat(2,1fr);
     gap:10px;
     padding:0 20px 20px;
   }
   .graph-wrap{padding:6px 20px 20px;}
   .graph-bars{
     display:flex;align-items:flex-end;justify-content:space-between;
-    gap:6px;height:64px;
+    gap:6px;height:82px;
   }
   .graph-col{
     flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;height:100%;justify-content:flex-end;
@@ -259,6 +259,69 @@
     min-height:4px;
   }
   .graph-day{font-size:10px;color:var(--text-3);font-weight:650;text-transform:uppercase;}
+  .graph-pct{font-size:10px;color:var(--text-2);font-weight:700;}
+
+  /* ── Chart.js canvas ─────────────────────────────────────────────────── */
+  .chart-wrap{padding:6px 16px 20px;height:190px;position:relative;}
+
+  /* ── CPU gauge ────────────────────────────────────────────────────────── */
+  .cpu-track{
+    width:100%;height:6px;background:rgba(255,255,255,0.07);
+    border-radius:6px;overflow:hidden;margin-top:8px;
+  }
+  .cpu-fill{
+    height:100%;border-radius:6px;
+    background:linear-gradient(90deg, var(--ok), var(--accent));
+    transition:width 0.6s ease;
+    width:0%;
+  }
+
+  /* ── API docs panel ──────────────────────────────────────────────────── */
+  .api-intro{padding:0 20px 14px;font-size:12.5px;color:var(--text-2);line-height:1.55;}
+  .endpoint-list{padding:0 16px 18px;display:flex;flex-direction:column;gap:10px;}
+  .endpoint-card{
+    background:var(--glass-strong);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:14px 14px 12px;
+  }
+  .endpoint-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
+  .method-tag{
+    font-size:10.5px;font-weight:750;letter-spacing:0.04em;
+    padding:3px 8px;border-radius:7px;
+    background:rgba(52,211,153,0.14);color:var(--ok);
+    border:1px solid rgba(52,211,153,0.3);
+    flex-shrink:0;
+  }
+  .endpoint-path{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12.5px;color:var(--text-1);font-weight:600;
+    word-break:break-all;
+  }
+  .endpoint-desc{font-size:12px;color:var(--text-3);line-height:1.5;margin-bottom:10px;}
+  .code-block{
+    position:relative;
+    background:#000;
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:12px 40px 12px 14px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:11.5px;
+    line-height:1.6;
+    color:#a3e6b8;
+    overflow-x:auto;
+    white-space:pre;
+  }
+  .code-copy{
+    position:absolute;top:8px;right:8px;
+    width:26px;height:26px;border-radius:8px;
+    background:rgba(255,255,255,0.06);
+    border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--text-2);cursor:pointer;
+  }
+  .code-copy svg{width:13px;height:13px;}
+  .code-copy.copied{color:var(--ok);border-color:rgba(52,211,153,0.3);}
   .log-list{padding:0 12px 14px;display:flex;flex-direction:column;gap:1px;}
   .log-row{
     display:flex;align-items:center;gap:11px;
@@ -487,8 +550,17 @@
           <div class="stat-label">Memory</div>
         </div>
         <div class="stat">
+          <div class="stat-value" id="stat-cpu">—</div>
+          <div class="stat-label">CPU</div>
+          <div class="cpu-track"><div class="cpu-fill" id="cpu-fill"></div></div>
+        </div>
+        <div class="stat">
           <div class="stat-value" id="stat-avgtime">—</div>
           <div class="stat-label">Avg time</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="stat-avgspeed">—</div>
+          <div class="stat-label">Avg speed</div>
         </div>
         <div class="stat">
           <div class="stat-value" id="stat-version">—</div>
@@ -498,9 +570,9 @@
     </div>
 
     <div class="panel">
-      <div class="section-label">Last 7 days</div>
-      <div class="graph-wrap">
-        <div class="graph-bars" id="graph-bars"></div>
+      <div class="section-label">Daily activity</div>
+      <div class="chart-wrap">
+        <canvas id="activity-chart"></canvas>
       </div>
     </div>
 
@@ -551,6 +623,54 @@
       </div>
     </div>
 
+    <div class="panel" id="api-docs-panel">
+      <div class="section-label">Public API</div>
+      <div class="api-intro">
+        Read-only, no API key needed. Anyone can call these from their own app, bot, or dashboard.
+      </div>
+
+      <div class="endpoint-list">
+        <div class="endpoint-card">
+          <div class="endpoint-head">
+            <span class="method-tag">GET</span>
+            <span class="endpoint-path">/api/stats</span>
+          </div>
+          <div class="endpoint-desc">
+            Live stats — users, downloads, success rate, memory, CPU, avg download time &amp; speed, last 7 days.
+          </div>
+          <div class="code-block" data-copy="curl https://all-media-downloader-4o3l.onrender.com/api/stats">curl https://all-media-downloader-4o3l.onrender.com/api/stats
+            <div class="code-copy" data-copy-target="0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="endpoint-card">
+          <div class="endpoint-head">
+            <span class="method-tag">GET</span>
+            <span class="endpoint-path">/api/endpoints</span>
+          </div>
+          <div class="endpoint-desc">
+            Machine-readable list of every endpoint this deployment exposes — use this to auto-discover the API.
+          </div>
+          <div class="code-block" data-copy="curl https://all-media-downloader-4o3l.onrender.com/api/endpoints">curl https://all-media-downloader-4o3l.onrender.com/api/endpoints
+            <div class="code-copy" data-copy-target="1">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="endpoint-card">
+          <div class="endpoint-head">
+            <span class="method-tag" style="background:rgba(255,178,36,0.14);color:#ffb224;border-color:rgba(255,178,36,0.3);">NOTE</span>
+          </div>
+          <div class="endpoint-desc" style="margin-bottom:0;">
+            There's no public media-download REST endpoint — downloading only works through the Telegram bot itself. If you want your own app to trigger downloads, message the developer to discuss access.
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="panel dev-card">
       <div class="avatar"><img src="https://avatars.githubusercontent.com/u/108660621?v=4" alt="" /></div>
       <div class="dev-meta">
@@ -594,6 +714,7 @@
     </div>
   </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script>
   const BOT_LINK = 'https://telegram.me/allmedia_downloaderx_bot';
   const QR_IMAGE_URL = 'https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=10&data=' + encodeURIComponent(BOT_LINK);
@@ -701,11 +822,151 @@
     const max = Math.max(1, ...days.map(d => d.count || 0));
     wrap.innerHTML = days.map(d => {
       const h = Math.max(4, Math.round((d.count || 0) / max * 64));
-      return '<div class="graph-col">' +
-        '<div class="graph-bar" style="height:' + h + 'px"></div>' +
+      const pct = d.percentOfWeek != null ? d.percentOfWeek : 0;
+      const rate = d.successRate;
+      const barColor = rate == null ? '' :
+        rate >= 90 ? 'background:linear-gradient(180deg, #34d399, rgba(52,211,153,0.35));' :
+        rate >= 70 ? 'background:linear-gradient(180deg, #ffb224, rgba(255,178,36,0.35));' :
+        'background:linear-gradient(180deg, #ff5252, rgba(255,82,82,0.35));';
+      const title = rate != null ? (d.count + ' downloads · ' + rate + '% success') : (d.count + ' downloads');
+      return '<div class="graph-col" title="' + title + '">' +
+        '<div class="graph-pct">' + pct + '%</div>' +
+        '<div class="graph-bar" style="height:' + h + 'px;' + barColor + '"></div>' +
         '<div class="graph-day">' + (d.label || '') + '</div>' +
         '</div>';
     }).join('');
+  }
+
+  // ── Chart.js: daily downloads (bars) + daily avg download time (line) ──────
+  let activityChart = null;
+
+  function renderActivityChart(days){
+    const canvas = document.getElementById('activity-chart');
+    if (!canvas || typeof Chart === 'undefined') return;
+
+    const labels     = (days || []).map(d => d.label || '');
+    const counts     = (days || []).map(d => d.count || 0);
+    const avgTimes   = (days || []).map(d => d.avgTimeSec != null ? +d.avgTimeSec.toFixed(2) : null);
+    const successPct = (days || []).map(d => d.successRate != null ? d.successRate : null);
+    const weekTotal  = counts.reduce((a, b) => a + b, 0);
+    const pctOfWeek  = counts.map(c => weekTotal > 0 ? Math.round((c / weekTotal) * 100) : 0);
+
+    const pctLabelPlugin = {
+      id: 'pctLabelPlugin',
+      afterDatasetsDraw(chart){
+        const meta = chart.getDatasetMeta(0);
+        if (!meta || !meta.data) return;
+        const { ctx } = chart;
+        ctx.save();
+        ctx.font = "650 10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.textAlign = 'center';
+        meta.data.forEach((bar, i) => {
+          if (!counts[i]) return;
+          ctx.fillText(pctOfWeek[i] + '%', bar.x, bar.y - 6);
+        });
+        ctx.restore();
+      }
+    };
+
+    if (activityChart){
+      activityChart.data.labels = labels;
+      activityChart.data.datasets[0].data = counts;
+      activityChart.data.datasets[1].data = avgTimes;
+      activityChart.data.datasets[2].data = successPct;
+      activityChart.update();
+      return;
+    }
+
+    activityChart = new Chart(canvas.getContext('2d'), {
+      plugins: [pctLabelPlugin],
+      data: {
+        labels,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Downloads',
+            data: counts,
+            backgroundColor: 'rgba(255,106,26,0.55)',
+            borderRadius: 6,
+            yAxisID: 'yCount',
+            order: 3,
+          },
+          {
+            type: 'line',
+            label: 'Avg time (s)',
+            data: avgTimes,
+            borderColor: '#34d399',
+            backgroundColor: 'rgba(52,211,153,0.15)',
+            tension: 0.35,
+            spanGaps: true,
+            pointRadius: 3,
+            pointBackgroundColor: '#34d399',
+            yAxisID: 'yTime',
+            order: 1,
+          },
+          {
+            type: 'line',
+            label: 'Success %',
+            data: successPct,
+            borderColor: '#ffb224',
+            backgroundColor: 'rgba(255,178,36,0.15)',
+            tension: 0.35,
+            spanGaps: true,
+            pointRadius: 3,
+            pointBackgroundColor: '#ffb224',
+            borderDash: [4, 3],
+            yAxisID: 'yPct',
+            order: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: { top: 16 } },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            labels: { color: 'rgba(255,255,255,0.65)', font: { size: 11, weight: '600' }, boxWidth: 10, usePointStyle: true },
+          },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
+            callbacks: {
+              label: (ctx) => {
+                if (ctx.dataset.label === 'Success %') return ctx.dataset.label + ': ' + (ctx.raw == null ? '—' : ctx.raw + '%');
+                if (ctx.dataset.label === 'Avg time (s)') return ctx.dataset.label + ': ' + (ctx.raw == null ? '—' : ctx.raw + 's');
+                return ctx.dataset.label + ': ' + ctx.raw;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: 'rgba(255,255,255,0.45)', font: { size: 10, weight: '650' } },
+            grid: { display: false },
+          },
+          yCount: {
+            position: 'left',
+            beginAtZero: true,
+            ticks: { color: 'rgba(255,255,255,0.4)', font: { size: 10 }, precision: 0 },
+            grid: { color: 'rgba(255,255,255,0.06)' },
+          },
+          yTime: {
+            position: 'right',
+            beginAtZero: true,
+            ticks: { color: 'rgba(255,255,255,0.4)', font: { size: 10 } },
+            grid: { display: false },
+          },
+          yPct: {
+            display: false,
+            min: 0,
+            max: 100,
+          },
+        },
+      },
+    });
   }
 
   function renderLog(entries){
@@ -746,6 +1007,14 @@
     }
   }
 
+  let baseUptimeSec = 0;
+  let baseUptimeAt  = Date.now();
+
+  function tickUptime(){
+    const liveSec = baseUptimeSec + (Date.now() - baseUptimeAt) / 1000;
+    document.getElementById('stat-uptime').textContent = formatUptime(liveSec);
+  }
+
   async function loadStats(){
     try{
       const res = await fetch('/api/stats', { cache: 'no-store' });
@@ -754,7 +1023,9 @@
 
       setStatus(data.status || 'operational');
 
-      document.getElementById('stat-uptime').textContent = formatUptime(data.uptime || 0);
+      baseUptimeSec = data.uptime || 0;
+      baseUptimeAt  = Date.now();
+      tickUptime();
       document.getElementById('stat-users').textContent = data.users ?? '0';
       document.getElementById('stat-downloads').textContent = data.downloads ?? '0';
 
@@ -768,10 +1039,22 @@
       renderRate(data.successRate);
 
       document.getElementById('stat-memory').textContent = formatBytes(data.memoryMB);
+
+      const cpuPct = data.cpuPercent != null ? Math.max(0, Math.min(100, data.cpuPercent)) : null;
+      document.getElementById('stat-cpu').textContent = cpuPct != null ? cpuPct.toFixed(1) + '%' : '—';
+      document.getElementById('cpu-fill').style.width = (cpuPct || 0) + '%';
+
       document.getElementById('stat-avgtime').textContent = data.avgTimeSec != null ? data.avgTimeSec.toFixed(1) + 's' : '—';
-      document.getElementById('stat-version').textContent = data.version || 'v2.0.0';
+
+      const avgSpeed = data.avgSpeedKbps;
+      document.getElementById('stat-avgspeed').textContent = avgSpeed != null
+        ? (avgSpeed >= 1024 ? (avgSpeed / 1024).toFixed(2) + ' MB/s' : Math.round(avgSpeed) + ' KB/s')
+        : '—';
+
+      document.getElementById('stat-version').textContent = data.version || 'v2.1.0';
 
       renderGraph(data.last7Days);
+      renderActivityChart(data.last7Days);
       renderLog(data.recentActivity);
 
       document.getElementById('info-limit').textContent = data.dailyLimit ? (data.dailyLimit + ' / day') : 'Unlimited';
@@ -785,15 +1068,20 @@
       document.getElementById('stat-downloads').textContent = '0';
       renderRate(null);
       document.getElementById('stat-memory').textContent = '—';
+      document.getElementById('stat-cpu').textContent = '—';
+      document.getElementById('cpu-fill').style.width = '0%';
       document.getElementById('stat-avgtime').textContent = '—';
+      document.getElementById('stat-avgspeed').textContent = '—';
       document.getElementById('stat-version').textContent = '—';
       renderGraph([]);
+      renderActivityChart([]);
       renderLog([]);
     }
   }
 
   loadStats();
   setInterval(loadStats, 15000);
+  setInterval(tickUptime, 1000);
 </script>
 
 </body>

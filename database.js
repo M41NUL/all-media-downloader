@@ -39,7 +39,13 @@ function save(db) {
 function defaultSchema() {
   return {
     users     : {},   // { userId: { id, username, firstName, joinedAt, downloads } }
-    stats     : { total: 0, tiktok: 0, instagram: 0, facebook: 0, failed: 0 },
+    stats     : {
+      total: 0, tiktok: 0, instagram: 0, facebook: 0, failed: 0,
+      totalTimeMs   : 0,  // sum of every successful download's duration (ms)
+      timeCount     : 0,  // how many downloads contributed a duration
+      totalSpeedKbps: 0,  // sum of every successful download's speed (KB/s)
+      speedCount    : 0,  // how many downloads contributed a speed
+    },
     activity  : [],   // [{ platform, time (ISO), success }] — most recent first, capped
     restarts  : 0,
     firstBootAt: null,
@@ -77,8 +83,10 @@ function upsertUser(from) {
  * Record a successful download.
  * @param {string|number} userId
  * @param {'tiktok'|'instagram'|'facebook'} platform
+ * @param {number} [durationMs] - how long the download took, in milliseconds
+ * @param {number} [fileSizeBytes] - size of the downloaded file, in bytes (used to derive speed)
  */
-function recordDownload(userId, platform) {
+function recordDownload(userId, platform, durationMs, fileSizeBytes) {
   const db  = load();
   const uid = String(userId);
 
@@ -88,12 +96,33 @@ function recordDownload(userId, platform) {
   if (platform === 'instagram') db.stats.instagram += 1;
   if (platform === 'facebook')  db.stats.facebook  += 1;
 
+  // Track duration for avg-time stat (only if a valid number was passed)
+  let speedKbps = null;
+  if (typeof durationMs === 'number' && isFinite(durationMs) && durationMs >= 0) {
+    if (!db.stats.totalTimeMs) db.stats.totalTimeMs = 0;
+    if (!db.stats.timeCount)   db.stats.timeCount   = 0;
+    db.stats.totalTimeMs += durationMs;
+    db.stats.timeCount   += 1;
+
+    // Derive speed (KB/s) if we also know the file size
+    if (typeof fileSizeBytes === 'number' && isFinite(fileSizeBytes) && fileSizeBytes > 0 && durationMs > 0) {
+      speedKbps = (fileSizeBytes / 1024) / (durationMs / 1000);
+      if (!db.stats.totalSpeedKbps) db.stats.totalSpeedKbps = 0;
+      if (!db.stats.speedCount)     db.stats.speedCount     = 0;
+      db.stats.totalSpeedKbps += speedKbps;
+      db.stats.speedCount     += 1;
+    }
+  }
+
   // Increment per-user
   if (db.users[uid]) db.users[uid].downloads += 1;
 
   // Log activity (cap at 100 most recent entries)
   if (!db.activity) db.activity = [];
-  db.activity.unshift({ platform, time: new Date().toISOString(), success: true });
+  db.activity.unshift({
+    platform, time: new Date().toISOString(), success: true,
+    durationMs: durationMs ?? null, speedKbps,
+  });
   db.activity = db.activity.slice(0, 100);
 
   save(db);
@@ -154,9 +183,10 @@ function getDashboardStats() {
     ? Math.round((db.stats.total / totalAttempts) * 100)
     : null;
 
-  // Last 7 days — count successful downloads per day
+  // Last 7 days — successful downloads per day, that day's avg time (sec),
+  // its share of the week's total downloads (%), and its success rate (%).
   const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const days = [];
+  const rawDays = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -164,19 +194,52 @@ function getDashboardStats() {
     const next = new Date(d);
     next.setDate(next.getDate() + 1);
 
-    const count = activity.filter(a => {
-      if (!a.success) return false;
+    const dayAll = activity.filter(a => {
       const t = new Date(a.time).getTime();
       return t >= d.getTime() && t < next.getTime();
-    }).length;
+    });
+    const daySuccess = dayAll.filter(a => a.success);
 
-    days.push({ label: dayLabels[d.getDay()], count });
+    const timed = daySuccess.filter(a => typeof a.durationMs === 'number');
+    const avgDayTimeSec = timed.length
+      ? (timed.reduce((sum, a) => sum + a.durationMs, 0) / timed.length) / 1000
+      : null;
+
+    const daySuccessRate = dayAll.length
+      ? Math.round((daySuccess.length / dayAll.length) * 100)
+      : null;
+
+    rawDays.push({
+      label: dayLabels[d.getDay()],
+      count: daySuccess.length,
+      avgTimeSec: avgDayTimeSec,
+      successRate: daySuccessRate,
+    });
   }
+
+  // Each day's share of the week's total successful downloads (%)
+  const weekTotal = rawDays.reduce((sum, d) => sum + d.count, 0);
+  const days = rawDays.map(d => ({
+    ...d,
+    percentOfWeek: weekTotal > 0 ? Math.round((d.count / weekTotal) * 100) : 0,
+  }));
 
   const recentActivity = activity
     .filter(a => a.success)
     .slice(0, 5)
     .map(a => ({ platform: a.platform, time: a.time }));
+
+  // Average download time (seconds), based on every timed successful download
+  const timeCount = db.stats.timeCount || 0;
+  const avgTimeSec = timeCount > 0
+    ? (db.stats.totalTimeMs / timeCount) / 1000
+    : null;
+
+  // Average download speed (KB/s), based on every successful download with known size
+  const speedCount = db.stats.speedCount || 0;
+  const avgSpeedKbps = speedCount > 0
+    ? db.stats.totalSpeedKbps / speedCount
+    : null;
 
   return {
     status        : 'operational',
@@ -188,6 +251,8 @@ function getDashboardStats() {
       facebook  : db.stats.facebook,
     },
     successRate,
+    avgTimeSec,
+    avgSpeedKbps,
     last7Days     : days,
     recentActivity,
     restarts      : db.restarts || 0,
