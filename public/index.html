@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+<meta http-equiv="Pragma" content="no-cache"/>
+<meta http-equiv="Expires" content="0"/>
+<title>All Media Downloader — System Status</title>
+<style>
+  :root{
+    --bg:#050506;
+    --bg-2:#0b0b0e;
+    --glass:rgba(255,255,255,0.055);
+    --glass-strong:rgba(255,255,255,0.09);
+    --border:rgba(255,255,255,0.09);
+    --border-strong:rgba(255,255,255,0.16);
+    --text-1:#f2f2f4;
+    --text-2:#9a9aa3;
+    --text-3:#5c5c66;
+    --accent:#ff6a1a;
+    --accent-soft:rgba(255,106,26,0.14);
+    --accent-line:rgba(255,106,26,0.35);
+    --ok:#34d399;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(255,106,26,0.10), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 110% 10%, rgba(99,102,241,0.08), transparent 55%),
+      var(--bg);
+    color:var(--text-1);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",Inter,system-ui,sans-serif;
+    min-height:100%;
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+    padding:56px 20px 80px;
+    letter-spacing:-0.01em;
+    overflow-x:hidden;
+  }
+  .blob{
+    position:fixed;
+    border-radius:50%;
+    filter:blur(70px);
+    pointer-events:none;
+    z-index:0;
+    mix-blend-mode:screen;
+    animation:drift 22s ease-in-out infinite;
+  }
+  .blob-a{width:420px;height:420px;background:radial-gradient(circle,rgba(255,106,26,0.22),transparent 70%);top:-140px;left:-120px;animation-delay:0s;}
+  .blob-b{width:380px;height:380px;background:radial-gradient(circle,rgba(99,102,241,0.16),transparent 70%);bottom:-160px;right:-100px;animation-delay:-8s;}
+  .blob-c{width:280px;height:280px;background:radial-gradient(circle,rgba(255,255,255,0.05),transparent 70%);top:40%;left:60%;animation-delay:-14s;}
+  @keyframes drift{
+    0%,100%{transform:translate(0,0) scale(1);}
+    33%{transform:translate(30px,-20px) scale(1.08);}
+    66%{transform:translate(-20px,25px) scale(0.95);}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .blob{animation:none;}
+  }
+  .wrap{
+    position:relative;
+    z-index:1;
+    width:100%;
+    max-width:460px;
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+  }
+  .panel{
+    background:var(--glass);
+    border:1px solid var(--border);
+    border-radius:28px;
+    backdrop-filter:blur(28px) saturate(160%);
+    -webkit-backdrop-filter:blur(28px) saturate(160%);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.06) inset,
+      0 30px 60px -20px rgba(0,0,0,0.6);
+    position:relative;
+    overflow:hidden;
+  }
+  .panel::before{
+    content:'';
+    position:absolute;
+    inset:0;
+    background:linear-gradient(155deg, rgba(255,255,255,0.08), transparent 40%);
+    pointer-events:none;
+  }
+  .hero{
+    padding:32px 28px 28px;
+    text-align:left;
+  }
+  .brand-row{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin-bottom:22px;
+  }
+  .mark{
+    width:44px;height:44px;
+    border-radius:13px;
+    background:linear-gradient(160deg, var(--accent), #c94d0a);
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 8px 20px -6px rgba(255,106,26,0.55), 0 0 0 1px rgba(255,255,255,0.12) inset;
+    flex-shrink:0;
+    overflow:hidden;
+  }
+  .mark svg{width:22px;height:22px;}
+  .mark img{width:100%;height:100%;object-fit:cover;display:block;}
+  .brand-name{font-size:15px;font-weight:650;color:var(--text-1);line-height:1.2;}
+  .brand-sub{font-size:12px;color:var(--text-3);margin-top:2px;font-weight:500;}
+  .status-pill{
+    display:inline-flex;align-items:center;gap:7px;
+    background:rgba(52,211,153,0.12);
+    border:1px solid rgba(52,211,153,0.28);
+    color:var(--ok);
+    padding:7px 14px 7px 11px;
+    border-radius:100px;
+    font-size:12.5px;font-weight:650;
+    letter-spacing:0.02em;
+    margin-bottom:18px;
+  }
+  .status-pill .dot{
+    width:6px;height:6px;border-radius:50%;background:var(--ok);
+    box-shadow:0 0 0 3px rgba(52,211,153,0.18);
+    animation:pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
+  .status-pill.degraded{
+    background:rgba(255,178,36,0.12);
+    border-color:rgba(255,178,36,0.28);
+    color:#ffb224;
+  }
+  .status-pill.degraded .dot{background:#ffb224;box-shadow:0 0 0 3px rgba(255,178,36,0.18);}
+  .status-pill.offline{
+    background:rgba(255,82,82,0.12);
+    border-color:rgba(255,82,82,0.28);
+    color:#ff5252;
+  }
+  .status-pill.offline .dot{background:#ff5252;box-shadow:0 0 0 3px rgba(255,82,82,0.18);animation:none;}
+  h1{
+    font-size:23px;
+    font-weight:680;
+    letter-spacing:-0.02em;
+    color:var(--text-1);
+    margin-bottom:6px;
+  }
+  .lead{
+    font-size:14px;
+    color:var(--text-2);
+    font-weight:450;
+    line-height:1.5;
+  }
+  .stats{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:10px;
+    padding:0 20px 20px;
+  }
+  .stat{
+    background:var(--glass-strong);
+    border:1px solid var(--border);
+    border-radius:18px;
+    padding:16px 12px;
+    text-align:center;
+  }
+  .stat-value{
+    font-size:19px;
+    font-weight:680;
+    color:var(--text-1);
+    letter-spacing:-0.02em;
+    font-variant-numeric:tabular-nums;
+  }
+  .stat-label{
+    font-size:10.5px;
+    color:var(--text-3);
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    font-weight:650;
+    margin-top:4px;
+  }
+  .section-label{
+    font-size:11.5px;
+    font-weight:650;
+    text-transform:uppercase;
+    letter-spacing:0.07em;
+    color:var(--text-3);
+    padding:20px 24px 10px;
+  }
+  .platform-list{
+    padding:0 14px 16px;
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+  }
+  .platform-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:13px 14px;
+    border-radius:16px;
+    transition:background 0.15s ease;
+  }
+  .platform-row:active{background:rgba(255,255,255,0.04);}
+  .p-left{display:flex;align-items:center;gap:12px;}
+  .p-icon{
+    width:34px;height:34px;
+    border-radius:10px;
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+  }
+  .p-icon svg{width:17px;height:17px;}
+  .p-icon.tiktok{background:rgba(255,255,255,0.08);}
+  .p-icon.instagram{background:linear-gradient(140deg,#f9825a,#e0336b 55%,#6a3fd1);}
+  .p-icon.facebook{background:#1877f2;}
+  .p-name{font-size:14.5px;font-weight:600;color:var(--text-1);}
+  .p-count{font-size:13px;color:var(--text-3);font-weight:600;font-variant-numeric:tabular-nums;}
+  .rate-row{
+    display:flex;align-items:center;gap:16px;
+    padding:16px 20px 20px;
+  }
+  .rate-ring{
+    width:56px;height:56px;flex-shrink:0;position:relative;
+  }
+  .rate-ring svg{width:100%;height:100%;transform:rotate(-90deg);}
+  .rate-ring-bg{fill:none;stroke:rgba(255,255,255,0.07);stroke-width:5;}
+  .rate-ring-fill{fill:none;stroke:var(--ok);stroke-width:5;stroke-linecap:round;transition:stroke-dasharray 0.6s ease;}
+  .rate-ring-label{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:12.5px;font-weight:700;color:var(--text-1);
+  }
+  .rate-meta{flex:1;min-width:0;}
+  .rate-title{font-size:13.5px;font-weight:650;color:var(--text-1);}
+  .rate-sub{font-size:11.5px;color:var(--text-3);margin-top:2px;font-weight:500;}
+  .stats-secondary{
+    display:grid;
+    grid-template-columns:repeat(2,1fr);
+    gap:10px;
+    padding:0 20px 20px;
+  }
+  .cpu-track{
+    width:100%;height:6px;background:rgba(255,255,255,0.07);
+    border-radius:6px;overflow:hidden;margin-top:8px;
+  }
+  .cpu-fill{
+    height:100%;border-radius:6px;
+    background:linear-gradient(90deg, var(--ok), var(--accent));
+    transition:width 0.6s ease;
+    width:0%;
+  }
+  .chart-wrap{padding:6px 16px 20px;height:190px;position:relative;}
+  .api-intro{padding:0 20px 14px;font-size:12.5px;color:var(--text-2);line-height:1.55;}
+  .endpoint-list{padding:0 16px 18px;display:flex;flex-direction:column;gap:10px;}
+  .endpoint-card{
+    background:var(--glass-strong);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:14px 14px 12px;
+  }
+  .endpoint-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
+  .method-tag{
+    font-size:10.5px;font-weight:750;letter-spacing:0.04em;
+    padding:3px 8px;border-radius:7px;
+    background:rgba(52,211,153,0.14);color:var(--ok);
+    border:1px solid rgba(52,211,153,0.3);
+    flex-shrink:0;
+  }
+  .endpoint-path{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12.5px;color:var(--text-1);font-weight:600;
+    word-break:break-all;
+  }
+  .endpoint-desc{font-size:12px;color:var(--text-3);line-height:1.5;margin-bottom:10px;}
+  .code-block{
+    position:relative;
+    background:#000;
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:12px 40px 12px 14px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:11.5px;
+    line-height:1.6;
+    color:#a3e6b8;
+    overflow-x:auto;
+    white-space:pre;
+  }
+  .code-copy{
+    position:absolute;top:8px;right:8px;
+    width:26px;height:26px;border-radius:8px;
+    background:rgba(255,255,255,0.06);
+    border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--text-2);cursor:pointer;
+  }
+  .code-copy svg{width:13px;height:13px;}
+  .code-copy.copied{color:var(--ok);border-color:rgba(52,211,153,0.3);}
+  .log-list{padding:0 12px 14px;display:flex;flex-direction:column;gap:1px;}
+  .log-row{
+    display:flex;align-items:center;gap:11px;
+    padding:11px 12px;border-radius:14px;
+  }
+  .log-icon{
+    width:28px;height:28px;border-radius:9px;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .log-icon svg{width:14px;height:14px;}
+  .log-icon.tiktok{background:rgba(255,255,255,0.08);}
+  .log-icon.instagram{background:linear-gradient(140deg,#f9825a,#e0336b 55%,#6a3fd1);}
+  .log-icon.facebook{background:#1877f2;}
+  .log-text{flex:1;min-width:0;font-size:13px;color:var(--text-2);font-weight:500;}
+  .log-text b{color:var(--text-1);font-weight:650;}
+  .log-time{font-size:11.5px;color:var(--text-3);font-weight:600;flex-shrink:0;font-variant-numeric:tabular-nums;}
+  .log-empty{padding:20px 12px 6px;text-align:center;font-size:12.5px;color:var(--text-3);font-weight:500;}
+  .info-list{padding:0 20px 20px;display:flex;flex-direction:column;gap:12px;}
+  .info-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;}
+  .info-row .k{color:var(--text-3);font-weight:550;}
+  .info-row .v{color:var(--text-1);font-weight:650;font-variant-numeric:tabular-nums;}
+  .actions{padding:0 16px 16px;display:flex;flex-direction:column;gap:8px;}
+  .action-btn{
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    width:100%;
+    padding:14px;
+    border-radius:16px;
+    font-size:14px;font-weight:650;
+    text-decoration:none;
+    border:1px solid var(--border);
+    transition:transform 0.12s ease, background 0.15s ease;
+    cursor:pointer;
+    font-family:inherit;
+  }
+  .action-btn:active{transform:scale(0.98);}
+  .action-btn svg{width:16px;height:16px;}
+  .action-btn.primary{
+    background:linear-gradient(160deg, var(--accent), #d9590f);
+    color:#fff;border-color:transparent;
+    box-shadow:0 10px 24px -10px rgba(255,106,26,0.55);
+  }
+  .action-btn.secondary{
+    background:var(--glass-strong);
+    color:var(--text-1);
+  }
+  .action-btn.secondary:hover{background:rgba(255,255,255,0.12);}
+  .panel{opacity:0;transform:translateY(14px);animation:reveal 0.6s cubic-bezier(.22,1,.36,1) forwards;}
+  .panel:nth-of-type(1){animation-delay:0.02s;}
+  .panel:nth-of-type(2){animation-delay:0.08s;}
+  .panel:nth-of-type(3){animation-delay:0.14s;}
+  .panel:nth-of-type(4){animation-delay:0.20s;}
+  .panel:nth-of-type(5){animation-delay:0.26s;}
+  .panel:nth-of-type(6){animation-delay:0.32s;}
+  .panel:nth-of-type(7){animation-delay:0.38s;}
+  @keyframes reveal{to{opacity:1;transform:translateY(0);}}
+  @media (prefers-reduced-motion:reduce){
+    .panel{animation:none;opacity:1;transform:none;}
+  }
+  .qr-overlay{
+    position:fixed;inset:0;z-index:20;
+    display:none;
+    align-items:center;justify-content:center;
+    padding:20px;
+    background:rgba(0,0,0,0.6);
+    backdrop-filter:blur(6px);
+    -webkit-backdrop-filter:blur(6px);
+  }
+  .qr-overlay.open{display:flex;}
+  .qr-card{
+    width:100%;max-width:300px;
+    background:var(--bg-2);
+    border:1px solid var(--border-strong);
+    border-radius:26px;
+    padding:26px 24px 22px;
+    text-align:center;
+    box-shadow:0 40px 80px -20px rgba(0,0,0,0.7);
+    animation:qrIn 0.25s cubic-bezier(.22,1,.36,1);
+  }
+  @keyframes qrIn{from{opacity:0;transform:scale(0.94) translateY(8px);}to{opacity:1;transform:scale(1) translateY(0);}}
+  .qr-canvas-wrap{
+    background:#fff;
+    border-radius:16px;
+    padding:14px;
+    display:inline-flex;
+    margin-bottom:16px;
+  }
+  .qr-canvas-wrap img{display:block;width:190px;height:190px;aspect-ratio:1/1;object-fit:contain;}
+  .qr-label{font-size:13.5px;font-weight:650;color:var(--text-1);margin-bottom:3px;}
+  .qr-link{font-size:12px;color:var(--text-3);font-weight:500;margin-bottom:18px;word-break:break-all;}
+  .qr-actions{display:flex;gap:8px;}
+  .qr-actions .action-btn{padding:12px;font-size:13px;}
+  .dev-card{
+    padding:20px 22px;
+    display:flex;
+    align-items:center;
+    gap:14px;
+  }
+  .avatar{
+    width:46px;height:46px;
+    border-radius:14px;
+    background:linear-gradient(150deg,#3a3a44,#1c1c22);
+    border:1px solid var(--border-strong);
+    display:flex;align-items:center;justify-content:center;
+    font-size:16px;font-weight:650;color:var(--text-1);
+    flex-shrink:0;
+    overflow:hidden;
+  }
+  .avatar img{width:100%;height:100%;object-fit:cover;display:block;}
+  .dev-meta{flex:1;min-width:0;}
+  .dev-name{font-size:14.5px;font-weight:650;color:var(--text-1);}
+  .dev-role{font-size:12px;color:var(--text-3);margin-top:1px;font-weight:500;}
+  .dev-links{display:flex;gap:8px;margin-top:9px;}
+  .dev-links a{
+    width:30px;height:30px;
+    border-radius:9px;
+    background:rgba(255,255,255,0.06);
+    border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--text-2);
+    text-decoration:none;
+    transition:all 0.15s ease;
+  }
+  .dev-links a:hover{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent);}
+  .dev-links svg{width:14px;height:14px;}
+  footer{
+    text-align:center;
+    padding-top:6px;
+    font-size:11.5px;
+    color:var(--text-3);
+    font-weight:500;
+    letter-spacing:0.01em;
+  }
+  footer b{color:var(--text-2);font-weight:650;}
+</style>
+</head>
+<body>
+
+  <div class="blob blob-a"></div>
+  <div class="blob blob-b"></div>
+  <div class="blob blob-c"></div>
+
+  <div class="wrap">
+
+    <div class="panel hero">
+      <div class="brand-row">
+        <div class="mark">
+          <img src="https://raw.githubusercontent.com/M41NUL/all-media-downloader/main/img/bot_profile.png" alt="" />
+        </div>
+        <div>
+          <div class="brand-name">All Media Downloader</div>
+          <div class="brand-sub">CODEX-M41NUL · Telegram Bot Service</div>
+        </div>
+      </div>
+
+      <div class="status-pill" id="status-pill"><span class="dot"></span><span id="status-text">Operational</span></div>
+
+      <h1 id="status-heading">All systems running</h1>
+      <p class="lead">Download TikTok, Instagram, and Facebook videos — free and fast, right inside Telegram.</p>
+    </div>
+
+    <div class="panel">
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-value" id="stat-uptime">—</div>
+          <div class="stat-label">Uptime</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="stat-users">—</div>
+          <div class="stat-label">Users</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="stat-downloads">—</div>
+          <div class="stat-label">Downloads</div>
+        </div>
+      </div>
+
+      <div class="section-label">Platforms</div>
+      <div class="platform-list" id="platform-list">
+        <div class="platform-row">
+          <div class="p-left">
+            <div class="p-icon tiktok">
+              <svg viewBox="0 0 24 24" fill="#fff"><path d="M16.6 5.82c-.8-.7-1.3-1.7-1.4-2.82h-3.1v13.4c0 1.5-1.2 2.7-2.7 2.7s-2.7-1.2-2.7-2.7 1.2-2.7 2.7-2.7c.3 0 .6 0 .8.1V10.6c-.3 0-.5-.1-.8-.1-3.3 0-6 2.7-6 6s2.7 6 6 6 6-2.7 6-6V9.2c1.2.9 2.7 1.4 4.3 1.4V7.5c-1.1 0-2.2-.4-3.1-1.2z"/></svg>
+            </div>
+            <div class="p-name">TikTok</div>
+          </div>
+          <div class="p-count" data-key="tiktok">—</div>
+        </div>
+        <div class="platform-row">
+          <div class="p-left">
+            <div class="p-icon instagram">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1"/></svg>
+            </div>
+            <div class="p-name">Instagram</div>
+          </div>
+          <div class="p-count" data-key="instagram">—</div>
+        </div>
+        <div class="platform-row">
+          <div class="p-left">
+            <div class="p-icon facebook">
+              <svg viewBox="0 0 24 24" fill="#fff"><path d="M14 13.5h2.5l.5-3H14V8.5c0-.9.3-1.5 1.6-1.5H17V4.3c-.3 0-1.2-.1-2.3-.1-2.3 0-3.9 1.4-3.9 4v2.3H8.5v3H10.8V21h3.2v-7.5z"/></svg>
+            </div>
+            <div class="p-name">Facebook</div>
+          </div>
+          <div class="p-count" data-key="facebook">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="rate-row">
+        <div class="rate-ring">
+          <svg viewBox="0 0 56 56">
+            <circle class="rate-ring-bg" cx="28" cy="28" r="24"/>
+            <circle class="rate-ring-fill" id="rate-ring-fill" cx="28" cy="28" r="24" stroke-dasharray="0 151"/>
+          </svg>
+          <div class="rate-ring-label" id="rate-ring-label">—</div>
+        </div>
+        <div class="rate-meta">
+          <div class="rate-title">Success rate</div>
+          <div class="rate-sub" id="rate-sub">Calculated from recent downloads</div>
+        </div>
+      </div>
+      <div class="stats-secondary">
+        <div class="stat">
+          <div class="stat-value" id="stat-memory">—</div>
+          <div class="stat-label">Memory</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="stat-cpu">—</div>
+          <div class="stat-label">CPU</div>
+          <div class="cpu-track"><div class="cpu-fill" id="cpu-fill"></div></div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="stat-avgtime">—</div>
+          <div class="stat-label">Avg time</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="stat-avgspeed">—</div>
+          <div class="stat-label">Avg speed</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="stat-version">—</div>
+          <div class="stat-label">Version</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-label">Daily activity</div>
+      <div class="chart-wrap">
+        <canvas id="activity-chart"></canvas>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-label">Recent activity</div>
+      <div class="log-list" id="log-list">
+        <div class="log-empty">No recent activity yet</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-label">Service info</div>
+      <div class="info-list">
+        <div class="info-row">
+          <div class="k">Supported platforms</div>
+          <div class="v">TikTok · Instagram · Facebook</div>
+        </div>
+        <div class="info-row">
+          <div class="k">Daily limit per user</div>
+          <div class="v" id="info-limit">Unlimited</div>
+        </div>
+        <div class="info-row">
+          <div class="k">Restarts</div>
+          <div class="v" id="info-restarts">0</div>
+        </div>
+        <div class="info-row">
+          <div class="k">Last deploy</div>
+          <div class="v" id="info-deploy">—</div>
+        </div>
+      </div>
+      <div class="actions">
+        <a class="action-btn primary" href="https://telegram.me/allmedia_downloaderx_bot" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.5 4.5 2.7 11.9c-1.2.5-1.2 1.2-.2 1.5l4.8 1.5 1.8 5.6c.2.6.4.8.9.8.5 0 .7-.2 1-.5l2.4-2.3 4.9 3.6c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.4-1.8-1.6-1.2z"/></svg>
+          Open Bot
+        </a>
+        <button class="action-btn secondary" id="copy-link-btn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+          <span id="copy-link-text">Copy bot link</span>
+        </button>
+        <button class="action-btn secondary" id="qr-btn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M17 20v.01M20 20v.01M14 20v.01"/></svg>
+          Show QR code
+        </button>
+        <a class="action-btn secondary" href="https://t.me/mdmainulislaminfo" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+          Report an issue
+        </a>
+      </div>
+    </div>
+
+    <div class="panel" id="api-docs-panel">
+      <div class="section-label">Public API</div>
+      <div class="api-intro">
+        Read-only, no API key needed. Anyone can call these from their own app, bot, or dashboard.
+      </div>
+
+      <div class="endpoint-list">
+        <div class="endpoint-card">
+          <div class="endpoint-head">
+            <span class="method-tag">GET</span>
+            <span class="endpoint-path">/api/stats</span>
+          </div>
+          <div class="endpoint-desc">
+            Live stats — users, downloads, success rate, memory, CPU, avg download time &amp; speed, last 7 days.
+          </div>
+          <div class="code-block" id="stats-code-block">curl <span id="stats-endpoint-url"></span>/api/stats
+            <div class="code-copy" data-copy-target="0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="endpoint-card">
+          <div class="endpoint-head">
+            <span class="method-tag">GET</span>
+            <span class="endpoint-path">/api/endpoints</span>
+          </div>
+          <div class="endpoint-desc">
+            Machine-readable list of every endpoint this deployment exposes — use this to auto-discover the API.
+          </div>
+          <div class="code-block" id="endpoints-code-block">curl <span id="endpoints-endpoint-url"></span>/api/endpoints
+            <div class="code-copy" data-copy-target="1">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="endpoint-card">
+          <div class="endpoint-head">
+            <span class="method-tag" style="background:rgba(255,178,36,0.14);color:#ffb224;border-color:rgba(255,178,36,0.3);">NOTE</span>
+          </div>
+          <div class="endpoint-desc" style="margin-bottom:0;">
+            There's no public media-download REST endpoint — downloading only works through the Telegram bot itself. If you want your own app to trigger downloads, message the developer to discuss access.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel dev-card">
+      <div class="avatar"><img src="https://avatars.githubusercontent.com/u/108660621?v=4" alt="" /></div>
+      <div class="dev-meta">
+        <div class="dev-name">Md. Mainul Islam</div>
+        <div class="dev-role">Developer · CODEX-M41NUL</div>
+        <div class="dev-links">
+          <a href="https://github.com/M41NUL" target="_blank" rel="noopener" aria-label="GitHub">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.03a9.5 9.5 0 0 1 5 0c1.91-1.3 2.75-1.03 2.75-1.03.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85V21c0 .27.18.58.69.48A10 10 0 0 0 12 2z"/></svg>
+          </a>
+          <a href="https://t.me/mdmainulislaminfo" target="_blank" rel="noopener" aria-label="Telegram">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.5 4.5 2.7 11.9c-1.2.5-1.2 1.2-.2 1.5l4.8 1.5 1.8 5.6c.2.6.4.8.9.8.5 0 .7-.2 1-.5l2.4-2.3 4.9 3.6c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.4-1.8-1.6-1.2z"/></svg>
+          </a>
+          <a href="https://wa.me/8801308850528" target="_blank" rel="noopener" aria-label="WhatsApp">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.66 15L2 22l5.14-1.32A10 10 0 1 0 12 2zm0 18.1a8.08 8.08 0 0 1-4.14-1.13l-.3-.18-3.06.79.82-2.99-.2-.31A8.1 8.1 0 1 1 12 20.1zm4.44-6.06c-.24-.12-1.43-.7-1.65-.79-.22-.08-.38-.12-.55.12-.16.24-.63.79-.77.95-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.2-1.43-1.34-1.67-.14-.24-.02-.37.11-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.55-1.32-.75-1.81-.2-.48-.4-.41-.55-.42-.14-.01-.3-.01-.46-.01-.16 0-.42.06-.64.3-.22.24-.84.82-.84 2s.86 2.32.98 2.48c.12.16 1.7 2.6 4.12 3.64.58.25 1.03.4 1.38.51.58.18 1.1.16 1.52.1.46-.07 1.43-.58 1.63-1.15.2-.56.2-1.05.14-1.15-.06-.1-.22-.16-.46-.28z"/></svg>
+          </a>
+          <a href="mailto:devmainulislam@gmail.com" aria-label="Email">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></svg>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <footer>Build <b>v2.1.0</b> · Node runtime · CODEX-M41NUL</footer>
+
+  </div>
+
+  <div class="qr-overlay" id="qr-overlay">
+    <div class="qr-card">
+      <div class="qr-canvas-wrap">
+        <img id="qr-image" src="" alt="QR code" width="190" height="190" />
+      </div>
+      <div class="qr-label">Scan to open in Telegram</div>
+      <div class="qr-link">telegram.me/allmedia_downloaderx_bot</div>
+      <div class="qr-actions">
+        <button class="action-btn secondary" id="qr-download-btn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 19h16"/></svg>
+          Download
+        </button>
+        <button class="action-btn secondary" id="qr-close-btn" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script>
+  const BOT_LINK = 'https://telegram.me/allmedia_downloaderx_bot';
+  const QR_IMAGE_URL = 'https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=10&data=' + encodeURIComponent(BOT_LINK);
+
+  // Endpoint code blocks use the page's own origin, so they always match
+  // wherever this dashboard happens to be deployed.
+  document.getElementById('stats-endpoint-url').textContent = window.location.origin;
+  document.getElementById('endpoints-endpoint-url').textContent = window.location.origin;
+
+  document.getElementById('copy-link-btn').addEventListener('click', async () => {
+    const label = document.getElementById('copy-link-text');
+    try{
+      await navigator.clipboard.writeText(BOT_LINK);
+      label.textContent = 'Copied';
+      setTimeout(() => { label.textContent = 'Copy bot link'; }, 1800);
+    }catch(e){
+      label.textContent = 'Copy failed';
+      setTimeout(() => { label.textContent = 'Copy bot link'; }, 1800);
+    }
+  });
+
+  document.querySelectorAll('.code-copy').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const block = btn.closest('.code-block');
+      const text = block ? block.textContent.replace(/\s+/g, ' ').trim() : '';
+      if (!text) return;
+      try{
+        await navigator.clipboard.writeText(text);
+        const original = btn.innerHTML;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+        setTimeout(() => { btn.innerHTML = original; }, 1400);
+      }catch(err){
+        btn.title = 'Copy failed';
+      }
+    });
+  });
+
+  const qrOverlay = document.getElementById('qr-overlay');
+  const qrImage = document.getElementById('qr-image');
+  let qrLoaded = false;
+
+  document.getElementById('qr-btn').addEventListener('click', () => {
+    if(!qrLoaded){
+      qrImage.src = QR_IMAGE_URL;
+      qrLoaded = true;
+    }
+    qrOverlay.classList.add('open');
+  });
+  document.getElementById('qr-close-btn').addEventListener('click', () => {
+    qrOverlay.classList.remove('open');
+  });
+  document.getElementById('qr-download-btn').addEventListener('click', async () => {
+    try{
+      const res = await fetch(QR_IMAGE_URL);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = 'allmedia_downloaderx_bot.png';
+      link.href = url;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }catch(e){
+      window.open(QR_IMAGE_URL, '_blank');
+    }
+  });
+  qrOverlay.addEventListener('click', (e) => {
+    if(e.target === qrOverlay) qrOverlay.classList.remove('open');
+  });
+
+  function formatUptime(sec){
+    const h = Math.floor(sec/3600);
+    const m = Math.floor((sec%3600)/60);
+    const s = Math.floor(sec%60);
+    const pad = n => String(n).padStart(2,'0');
+    return pad(h) + ':' + pad(m) + ':' + pad(s);
+  }
+
+  function formatBytes(mb){
+    if(mb == null) return '—';
+    if(mb >= 1024) return (mb/1024).toFixed(1) + ' GB';
+    return Math.round(mb) + ' MB';
+  }
+
+  function formatDeploy(iso){
+    if(!iso) return '—';
+    try{
+      const d = new Date(iso);
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
+        ' · ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    }catch(e){ return '—'; }
+  }
+
+  function timeAgo(iso){
+    if(!iso) return '';
+    const diff = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    if(diff < 60) return 'just now';
+    if(diff < 3600) return Math.floor(diff/60) + 'm ago';
+    if(diff < 86400) return Math.floor(diff/3600) + 'h ago';
+    return Math.floor(diff/86400) + 'd ago';
+  }
+
+  const PLATFORM_ICONS = {
+    tiktok: '<svg viewBox="0 0 24 24" fill="#fff"><path d="M16.6 5.82c-.8-.7-1.3-1.7-1.4-2.82h-3.1v13.4c0 1.5-1.2 2.7-2.7 2.7s-2.7-1.2-2.7-2.7 1.2-2.7 2.7-2.7c.3 0 .6 0 .8.1V10.6c-.3 0-.5-.1-.8-.1-3.3 0-6 2.7-6 6s2.7 6 6 6 6-2.7 6-6V9.2c1.2.9 2.7 1.4 4.3 1.4V7.5c-1.1 0-2.2-.4-3.1-1.2z"/></svg>',
+    instagram: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1"/></svg>',
+    facebook: '<svg viewBox="0 0 24 24" fill="#fff"><path d="M14 13.5h2.5l.5-3H14V8.5c0-.9.3-1.5 1.6-1.5H17V4.3c-.3 0-1.2-.1-2.3-.1-2.3 0-3.9 1.4-3.9 4v2.3H8.5v3H10.8V21h3.2v-7.5z"/></svg>'
+  };
+  const PLATFORM_LABELS = { tiktok: 'TikTok', instagram: 'Instagram', facebook: 'Facebook' };
+
+  function renderRate(rate){
+    const circumference = 2 * Math.PI * 24;
+    const pct = Math.max(0, Math.min(100, rate == null ? 0 : rate));
+    const ring = document.getElementById('rate-ring-fill');
+    const label = document.getElementById('rate-ring-label');
+    ring.setAttribute('stroke-dasharray', (circumference * pct / 100).toFixed(1) + ' ' + circumference.toFixed(1));
+    ring.style.stroke = pct >= 90 ? '#34d399' : pct >= 70 ? '#ffb224' : '#ff5252';
+    label.textContent = rate == null ? '—' : pct + '%';
+  }
+
+  // ── Chart.js: daily downloads (bars) + daily avg download time (line) ──────
+  let activityChart = null;
+
+  function renderActivityChart(days){
+    const canvas = document.getElementById('activity-chart');
+    if (!canvas || typeof Chart === 'undefined') return;
+
+    const labels     = (days || []).map(d => d.label || '');
+    const counts     = (days || []).map(d => d.count || 0);
+    const avgTimes   = (days || []).map(d => d.avgTimeSec != null ? +d.avgTimeSec.toFixed(2) : null);
+    const successPct = (days || []).map(d => d.successRate != null ? d.successRate : null);
+    const weekTotal  = counts.reduce((a, b) => a + b, 0);
+    const pctOfWeek  = counts.map(c => weekTotal > 0 ? Math.round((c / weekTotal) * 100) : 0);
+
+    const pctLabelPlugin = {
+      id: 'pctLabelPlugin',
+      afterDatasetsDraw(chart){
+        const meta = chart.getDatasetMeta(0);
+        if (!meta || !meta.data) return;
+        const { ctx } = chart;
+        ctx.save();
+        ctx.font = "650 10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.textAlign = 'center';
+        meta.data.forEach((bar, i) => {
+          if (!counts[i]) return;
+          ctx.fillText(pctOfWeek[i] + '%', bar.x, bar.y - 6);
+        });
+        ctx.restore();
+      }
+    };
+
+    if (activityChart){
+      activityChart.data.labels = labels;
+      activityChart.data.datasets[0].data = counts;
+      activityChart.data.datasets[1].data = avgTimes;
+      activityChart.data.datasets[2].data = successPct;
+      activityChart.update();
+      return;
+    }
+
+    activityChart = new Chart(canvas.getContext('2d'), {
+      plugins: [pctLabelPlugin],
+      data: {
+        labels,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Downloads',
+            data: counts,
+            backgroundColor: 'rgba(255,106,26,0.55)',
+            borderRadius: 6,
+            yAxisID: 'yCount',
+            order: 3,
+          },
+          {
+            type: 'line',
+            label: 'Avg time (s)',
+            data: avgTimes,
+            borderColor: '#34d399',
+            backgroundColor: 'rgba(52,211,153,0.15)',
+            tension: 0.35,
+            spanGaps: true,
+            pointRadius: 3,
+            pointBackgroundColor: '#34d399',
+            yAxisID: 'yTime',
+            order: 1,
+          },
+          {
+            type: 'line',
+            label: 'Success %',
+            data: successPct,
+            borderColor: '#ffb224',
+            backgroundColor: 'rgba(255,178,36,0.15)',
+            tension: 0.35,
+            spanGaps: true,
+            pointRadius: 3,
+            pointBackgroundColor: '#ffb224',
+            borderDash: [4, 3],
+            yAxisID: 'yPct',
+            order: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: { top: 16 } },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            labels: { color: 'rgba(255,255,255,0.65)', font: { size: 11, weight: '600' }, boxWidth: 10, usePointStyle: true },
+          },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
+            callbacks: {
+              label: (ctx) => {
+                if (ctx.dataset.label === 'Success %') return ctx.dataset.label + ': ' + (ctx.raw == null ? '—' : ctx.raw + '%');
+                if (ctx.dataset.label === 'Avg time (s)') return ctx.dataset.label + ': ' + (ctx.raw == null ? '—' : ctx.raw + 's');
+                return ctx.dataset.label + ': ' + ctx.raw;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: 'rgba(255,255,255,0.45)', font: { size: 10, weight: '650' } },
+            grid: { display: false },
+          },
+          yCount: {
+            position: 'left',
+            beginAtZero: true,
+            ticks: { color: 'rgba(255,255,255,0.4)', font: { size: 10 }, precision: 0 },
+            grid: { color: 'rgba(255,255,255,0.06)' },
+          },
+          yTime: {
+            position: 'right',
+            beginAtZero: true,
+            ticks: { color: 'rgba(255,255,255,0.4)', font: { size: 10 } },
+            grid: { display: false },
+          },
+          yPct: {
+            display: false,
+            min: 0,
+            max: 100,
+          },
+        },
+      },
+    });
+  }
+
+  function renderLog(entries){
+    const list = document.getElementById('log-list');
+    if(!entries || !entries.length){
+      list.innerHTML = '<div class="log-empty">No recent activity yet</div>';
+      return;
+    }
+    list.innerHTML = entries.slice(0, 5).map(e => {
+      const icon = PLATFORM_ICONS[e.platform] || '';
+      const name = PLATFORM_LABELS[e.platform] || 'Unknown';
+      return '<div class="log-row">' +
+        '<div class="log-icon ' + (e.platform || '') + '">' + icon + '</div>' +
+        '<div class="log-text"><b>' + name + '</b> download completed</div>' +
+        '<div class="log-time">' + timeAgo(e.time) + '</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  function setStatus(state){
+    const pill = document.getElementById('status-pill');
+    const text = document.getElementById('status-text');
+    const heading = document.getElementById('status-heading');
+
+    pill.classList.remove('degraded', 'offline');
+
+    if(state === 'offline'){
+      pill.classList.add('offline');
+      text.textContent = 'Offline';
+      heading.textContent = 'Service unreachable';
+    } else if(state === 'degraded'){
+      pill.classList.add('degraded');
+      text.textContent = 'Degraded';
+      heading.textContent = 'Partial outage';
+    } else {
+      text.textContent = 'Operational';
+      heading.textContent = 'All systems running';
+    }
+  }
+
+  let baseUptimeSec = 0;
+  let baseUptimeAt  = Date.now();
+
+  function tickUptime(){
+    const liveSec = baseUptimeSec + (Date.now() - baseUptimeAt) / 1000;
+    document.getElementById('stat-uptime').textContent = formatUptime(liveSec);
+  }
+
+  async function loadStats(){
+    try{
+      const res = await fetch('/api/stats', { cache: 'no-store' });
+      if(!res.ok) throw new Error('bad response');
+      const data = await res.json();
+
+      setStatus(data.status || 'operational');
+
+      baseUptimeSec = data.uptime || 0;
+      baseUptimeAt  = Date.now();
+      tickUptime();
+      document.getElementById('stat-users').textContent = data.users ?? '0';
+      document.getElementById('stat-downloads').textContent = data.downloads ?? '0';
+
+      const byPlatform = data.byPlatform || {};
+      document.querySelectorAll('.p-count').forEach(el => {
+        const key = el.getAttribute('data-key');
+        const val = byPlatform[key] || 0;
+        el.textContent = val;
+      });
+
+      renderRate(data.successRate);
+
+      document.getElementById('stat-memory').textContent = formatBytes(data.memoryMB);
+
+      const cpuPct = data.cpuPercent != null ? Math.max(0, Math.min(100, data.cpuPercent)) : null;
+      document.getElementById('stat-cpu').textContent = cpuPct != null ? cpuPct.toFixed(1) + '%' : '—';
+      document.getElementById('cpu-fill').style.width = (cpuPct || 0) + '%';
+
+      document.getElementById('stat-avgtime').textContent = data.avgTimeSec != null ? data.avgTimeSec.toFixed(1) + 's' : '—';
+
+      const avgSpeed = data.avgSpeedKbps;
+      document.getElementById('stat-avgspeed').textContent = avgSpeed != null
+        ? (avgSpeed >= 1024 ? (avgSpeed / 1024).toFixed(2) + ' MB/s' : Math.round(avgSpeed) + ' KB/s')
+        : '—';
+
+      document.getElementById('stat-version').textContent = data.version || '—';
+
+      renderActivityChart(data.last7Days);
+      renderLog(data.recentActivity);
+
+      document.getElementById('info-limit').textContent = data.dailyLimit ? (data.dailyLimit + ' / day') : 'Unlimited';
+      document.getElementById('info-restarts').textContent = data.restarts ?? '0';
+      document.getElementById('info-deploy').textContent = formatDeploy(data.lastDeploy);
+
+    }catch(e){
+      setStatus('offline');
+      document.getElementById('stat-uptime').textContent = '00:00:00';
+      document.getElementById('stat-users').textContent = '0';
+      document.getElementById('stat-downloads').textContent = '0';
+      renderRate(null);
+      document.getElementById('stat-memory').textContent = '—';
+      document.getElementById('stat-cpu').textContent = '—';
+      document.getElementById('cpu-fill').style.width = '0%';
+      document.getElementById('stat-avgtime').textContent = '—';
+      document.getElementById('stat-avgspeed').textContent = '—';
+      document.getElementById('stat-version').textContent = '—';
+      renderActivityChart([]);
+      renderLog([]);
+    }
+  }
+
+  loadStats();
+  setInterval(loadStats, 15000);
+  setInterval(tickUptime, 1000);
+</script>
+
+</body>
+</html>
