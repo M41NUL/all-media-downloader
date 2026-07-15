@@ -4,13 +4,14 @@
  * ============================================
  * Developer : Md. Mainul Islam
  * Owner     : CODEX-M41NUL
- * Telegram  : t.me/mdmainulislaminfo
+ * Telegram  : https://t.me/mdmainulislaminfo
  * GitHub    : https://github.com/M41NUL
  * WhatsApp  : +8801308850528
  * Channel   : https://t.me/codexm41nul
  * Group     : https://t.me/codex_m41nul
  * Email     : devmainulislam@gmail.com
  * YouTube   : https://youtube.com/@codexm41nul
+ * License   : MIT License
  * ============================================
  */
 
@@ -23,23 +24,6 @@ const path = require('path');
 const BIN_DIR = path.join(__dirname, 'bin');
 if (!process.env.PATH.includes(BIN_DIR)) {
   process.env.PATH = `${BIN_DIR}:${process.env.PATH}`;
-}
-
-// ── Make ffmpeg (from ffmpeg-static) available to yt-dlp ─────────────────────
-// yt-dlp needs ffmpeg to merge separate video+audio streams into one mp4.
-// Render's default Node buildpack has no ffmpeg installed, which silently
-// breaks HD downloads and forces slow, unreliable scraper fallbacks.
-try {
-  const ffmpegPath = require('ffmpeg-static');
-  if (ffmpegPath) {
-    const ffmpegDir = path.dirname(ffmpegPath);
-    if (!process.env.PATH.includes(ffmpegDir)) {
-      process.env.PATH = `${ffmpegDir}:${process.env.PATH}`;
-    }
-  }
-} catch (_) {
-  // ffmpeg-static not installed — yt-dlp will fall back to formats
-  // that don't need merging, or fallback scrapers will be used instead.
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,7 +39,7 @@ module.exports = {
   DEV: {
     name      : 'Md. Mainul Islam',
     owner     : 'CODEX-M41NUL',
-    telegram  : 't.me/mdmainulislaminfo',
+    telegram  : 'https://t.me/mdmainulislaminfo',
     handle    : '@mdmainulislaminfo',
     github    : 'https://github.com/M41NUL',
     whatsapp  : '+8801308850528',
@@ -64,6 +48,12 @@ module.exports = {
     email1    : 'devmainulislam@gmail.com',
     youtube   : 'https://youtube.com/@codexm41nul',
   },
+
+  // ── Bot public info ────────────────────────────────────────────────────────
+  BOT_NAME     : 'All Media Downloader',
+  BOT_USERNAME : 'allmedia_downloaderx_bot',
+  BOT_LINK     : 'https://t.me/allmedia_downloaderx_bot',
+  VERSION      : 'v2.1.0',
 
   // ── Platforms ──────────────────────────────────────────────────────────────
   PLATFORMS: {
@@ -91,6 +81,12 @@ module.exports = {
     BAR_LENGTH       : 16,
     FILLED_CHAR      : '█',
     EMPTY_CHAR       : '░',
+    DOWNLOAD_STEPS   : [
+      [10, '1.2 MB/s'], [25, '1.8 MB/s'], [40, '2.1 MB/s'],
+      [55, '2.3 MB/s'], [70, '2.5 MB/s'], [85, '2.4 MB/s'], [95, '2.2 MB/s'],
+    ],
+    SEND_STEPS       : [20, 40, 60, 75, 90],
+    STEP_INTERVAL_MS : 900,
   },
 
   // ── Timeouts & limits ─────────────────────────────────────────────────────

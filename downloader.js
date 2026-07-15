@@ -4,13 +4,14 @@
  * ============================================
  * Developer : Md. Mainul Islam
  * Owner     : CODEX-M41NUL
- * Telegram  : t.me/mdmainulislaminfo
+ * Telegram  : https://t.me/mdmainulislaminfo
  * GitHub    : https://github.com/M41NUL
  * WhatsApp  : +8801308850528
  * Channel   : https://t.me/codexm41nul
  * Group     : https://t.me/codex_m41nul
  * Email     : devmainulislam@gmail.com
  * YouTube   : https://youtube.com/@codexm41nul
+ * License   : MIT License
  * ============================================
  */
 
@@ -100,7 +101,7 @@ function ytdlpInfo(videoUrl, platform = 'generic') {
  * Download video directly to a temp file using yt-dlp.
  * Returns the temp file path — caller must delete it after use.
  */
-function ytdlpDownload(videoUrl, platform = 'generic', onProgress = null) {
+function ytdlpDownload(videoUrl, platform = 'generic') {
   return new Promise((resolve, reject) => {
     const tmpDir  = os.tmpdir();
     const outFile = path.join(tmpDir, `ytdlp_${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`);
@@ -128,8 +129,7 @@ function ytdlpDownload(videoUrl, platform = 'generic', onProgress = null) {
       '--no-playlist',
       '--playlist-items', '1',
       '--no-warnings',
-      '--newline',
-      '--progress',
+      '--quiet',
       '--socket-timeout', SOCKET_TIMEOUT,
       '--format', formatStr,
       '--merge-output-format', 'mp4',
@@ -143,43 +143,6 @@ function ytdlpDownload(videoUrl, platform = 'generic', onProgress = null) {
     const proc   = spawn('yt-dlp', args);
     let   stderr = '';
     proc.stderr.on('data', d => { stderr += d.toString(); });
-
-    // ── Parse yt-dlp's real-time progress from stdout ────────────────────────
-    // Example line: [download]  95.0% of 10.00MiB at 2.20MiB/s ETA 00:01
-    if (onProgress) {
-      const PROGRESS_RE = /\[download\]\s+(\d{1,3}\.\d)%\s+of\s+([\d.]+)(Ki|Mi|Gi)?B.*?at\s+([\d.]+)(Ki|Mi|Gi)?B\/s/;
-      let buffer   = '';
-      let lastEmit = 0;
-
-      const toBytes = (value, unitCode) => {
-        if (unitCode === 'Gi') return value * 1024 * 1024 * 1024;
-        if (unitCode === 'Mi') return value * 1024 * 1024;
-        if (unitCode === 'Ki') return value * 1024;
-        return value;
-      };
-
-      proc.stdout.on('data', (chunk) => {
-        buffer += chunk.toString();
-        const lines = buffer.split('\n');
-        buffer = lines.pop(); // keep incomplete last line for next chunk
-        for (const line of lines) {
-          const m = PROGRESS_RE.exec(line);
-          if (m) {
-            const now = Date.now();
-            if (now - lastEmit < 400) continue; // throttle ~2.5 updates/sec
-            lastEmit = now;
-
-            const pct         = Math.min(99, Math.round(parseFloat(m[1])));
-            const totalBytes  = toBytes(parseFloat(m[2]), m[3] || '');
-            const speedBytes  = toBytes(parseFloat(m[4]), m[5] || '');
-            const speedMBs    = speedBytes / 1024 / 1024;
-            const downloaded  = Math.round((pct / 100) * totalBytes);
-
-            onProgress(pct, `${speedMBs.toFixed(2)} MB/s`, downloaded, totalBytes);
-          }
-        }
-      });
-    }
 
     const killer = setTimeout(() => {
       try { proc.kill('SIGKILL'); } catch (_) {}
@@ -218,11 +181,8 @@ function ytdlpDownload(videoUrl, platform = 'generic', onProgress = null) {
 
 /**
  * Download a URL to a temp file (streaming — no RAM buffer).
- * @param {string} videoUrl
- * @param {Object} [extraHeaders]
- * @param {(pct:number, speed:string)=>void} [onProgress] real byte-based progress callback
  */
-function downloadToFile(videoUrl, extraHeaders = {}, onProgress = null) {
+function downloadToFile(videoUrl, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const tmpDir  = os.tmpdir();
     const outFile = path.join(tmpDir, `dl_${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`);
@@ -267,11 +227,9 @@ function downloadToFile(videoUrl, extraHeaders = {}, onProgress = null) {
             ));
           }
 
-          const fileStream  = fs.createWriteStream(outFile);
-          let   received    = 0;
-          let   aborted     = false;
-          const startTime    = Date.now();
-          let   lastEmit     = 0;
+          const fileStream = fs.createWriteStream(outFile);
+          let   received   = 0;
+          let   aborted    = false;
 
           res.on('data', (chunk) => {
             received += chunk.length;
@@ -283,24 +241,6 @@ function downloadToFile(videoUrl, extraHeaders = {}, onProgress = null) {
               reject(new Error(
                 `Video exceeded ${MAX_FILE_SIZE / 1024 / 1024} MB limit during download.`
               ));
-              return;
-            }
-
-            if (onProgress && !aborted) {
-              const now = Date.now();
-              if (now - lastEmit >= 400) { // throttle ~2.5 updates/sec
-                lastEmit = now;
-                const elapsedSec = (now - startTime) / 1000;
-                const speedMBs   = elapsedSec > 0 ? (received / 1024 / 1024) / elapsedSec : 0;
-                const speedLabel = `${speedMBs.toFixed(2)} MB/s`;
-                if (contentLength > 0) {
-                  const pct = Math.min(99, Math.round((received / contentLength) * 100));
-                  onProgress(pct, speedLabel, received, contentLength);
-                } else {
-                  // No content-length header — report bytes received instead of a percent
-                  onProgress(null, speedLabel, received, 0);
-                }
-              }
             }
           });
 
@@ -457,12 +397,12 @@ function cleanupFile(filePath) {
 // TIKTOK
 // ══════════════════════════════════════════════════════════════════════════════
 
-async function downloadTikTok(videoUrl, onProgress = null) {
+async function downloadTikTok(videoUrl) {
 
   // ── Primary: yt-dlp (info + file download) ───────────────────────────────
   try {
     const infoData = await ytdlpInfo(videoUrl, 'tiktok');
-    const filePath = await ytdlpDownload(videoUrl, 'tiktok', onProgress);
+    const filePath = await ytdlpDownload(videoUrl, 'tiktok');
     const stat     = fs.statSync(filePath);
     return {
       filePath,
@@ -484,7 +424,7 @@ async function downloadTikTok(videoUrl, onProgress = null) {
       const v   = data.data;
       const lnk = v.hdplay || v.play || v.wmplay;
       if (lnk) {
-        const filePath = await downloadToFile(lnk, { 'Referer': 'https://www.tikwm.com/' }, onProgress);
+        const filePath = await downloadToFile(lnk, { 'Referer': 'https://www.tikwm.com/' });
         const stat     = fs.statSync(filePath);
         return {
           filePath,
@@ -509,7 +449,7 @@ async function downloadTikTok(videoUrl, onProgress = null) {
     const match = html.match(/href="(https?:\/\/[^"]+\.mp4[^"]*)"/i);
     if (match) {
       const cleanUrl = match[1].replace(/&amp;/g, '&');
-      const filePath = await downloadToFile(cleanUrl, { 'Referer': 'https://snaptik.app/' }, onProgress);
+      const filePath = await downloadToFile(cleanUrl, { 'Referer': 'https://snaptik.app/' });
       const stat     = fs.statSync(filePath);
       return {
         filePath,
@@ -530,12 +470,12 @@ async function downloadTikTok(videoUrl, onProgress = null) {
 // INSTAGRAM
 // ══════════════════════════════════════════════════════════════════════════════
 
-async function downloadInstagram(videoUrl, onProgress = null) {
+async function downloadInstagram(videoUrl) {
 
   // ── Primary: yt-dlp (info + file download) ───────────────────────────────
   try {
     const infoData = await ytdlpInfo(videoUrl, 'instagram');
-    const filePath = await ytdlpDownload(videoUrl, 'instagram', onProgress);
+    const filePath = await ytdlpDownload(videoUrl, 'instagram');
     const stat     = fs.statSync(filePath);
     return {
       filePath,
@@ -561,7 +501,7 @@ async function downloadInstagram(videoUrl, onProgress = null) {
                 || inner.match(/href="(https?:\/\/[^"]+)"\s+[^>]*download/i);
     if (mp4) {
       const cleanUrl = mp4[1].replace(/&amp;/g, '&');
-      const filePath = await downloadToFile(cleanUrl, { 'Referer': 'https://snapinsta.app/' }, onProgress);
+      const filePath = await downloadToFile(cleanUrl, { 'Referer': 'https://snapinsta.app/' });
       const stat     = fs.statSync(filePath);
       return {
         filePath,
@@ -591,7 +531,7 @@ async function downloadInstagram(videoUrl, onProgress = null) {
     const mp4     = content.match(/href="(https?:\/\/[^"]+\.mp4[^"]*)"/i);
     if (mp4) {
       const cleanUrl = mp4[1].replace(/&amp;/g, '&');
-      const filePath = await downloadToFile(cleanUrl, { 'Referer': 'https://saveig.app/' }, onProgress);
+      const filePath = await downloadToFile(cleanUrl, { 'Referer': 'https://saveig.app/' });
       const stat     = fs.statSync(filePath);
       return {
         filePath,
@@ -616,7 +556,7 @@ async function downloadInstagram(videoUrl, onProgress = null) {
     const medias = parsed?.medias || [];
     const video  = medias.find(m => m.url);
     if (video?.url) {
-      const filePath = await downloadToFile(video.url, { 'Referer': 'https://reelsaver.net/' }, onProgress);
+      const filePath = await downloadToFile(video.url, { 'Referer': 'https://reelsaver.net/' });
       const stat     = fs.statSync(filePath);
       return {
         filePath,
@@ -641,14 +581,14 @@ async function downloadInstagram(videoUrl, onProgress = null) {
 // FACEBOOK
 // ══════════════════════════════════════════════════════════════════════════════
 
-async function downloadFacebook(videoUrl, onProgress = null) {
+async function downloadFacebook(videoUrl) {
   let finalUrl = videoUrl;
   if (/fb\.watch/i.test(videoUrl)) finalUrl = await resolveRedirect(videoUrl);
 
   // ── Primary: yt-dlp (info + file download) ───────────────────────────────
   try {
     const infoData = await ytdlpInfo(finalUrl, 'facebook');
-    const filePath = await ytdlpDownload(finalUrl, 'facebook', onProgress);
+    const filePath = await ytdlpDownload(finalUrl, 'facebook');
     const stat     = fs.statSync(filePath);
     return {
       filePath,
@@ -683,7 +623,7 @@ async function downloadFacebook(videoUrl, onProgress = null) {
     const lk = hd || sd;
     if (lk) {
       const cleanUrl = lk[1].replace(/&amp;/g, '&');
-      const filePath = await downloadToFile(cleanUrl, { 'Referer': 'https://fdown.net/' }, onProgress);
+      const filePath = await downloadToFile(cleanUrl, { 'Referer': 'https://fdown.net/' });
       const stat     = fs.statSync(filePath);
       return {
         filePath,
@@ -704,7 +644,7 @@ async function downloadFacebook(videoUrl, onProgress = null) {
     );
     const link = data?.links?.hd || data?.links?.sd;
     if (link) {
-      const filePath = await downloadToFile(link, { 'Referer': 'https://getfvid.com/' }, onProgress);
+      const filePath = await downloadToFile(link, { 'Referer': 'https://getfvid.com/' });
       const stat     = fs.statSync(filePath);
       return {
         filePath,
@@ -735,7 +675,7 @@ async function downloadFacebook(videoUrl, onProgress = null) {
     const link   = hdUrl || sdUrl;
     if (link) {
       const cleanUrl = link.replace(/&amp;/g, '&');
-      const filePath = await downloadToFile(cleanUrl, { 'Referer': 'https://fbdownloader.com/' }, onProgress);
+      const filePath = await downloadToFile(cleanUrl, { 'Referer': 'https://fbdownloader.com/' });
       const stat     = fs.statSync(filePath);
       return {
         filePath,
@@ -760,14 +700,14 @@ async function downloadFacebook(videoUrl, onProgress = null) {
 // MAIN DISPATCHER
 // ══════════════════════════════════════════════════════════════════════════════
 
-async function download(videoUrl, forcePlatform = null, onProgress = null) {
+async function download(videoUrl, forcePlatform = null) {
   const platform = forcePlatform || detectPlatform(videoUrl);
   if (!platform) throw new Error('Unsupported URL. Send a valid TikTok, Instagram, or Facebook link.');
 
   switch (platform) {
-    case 'tiktok'    : return downloadTikTok(videoUrl, onProgress);
-    case 'instagram' : return downloadInstagram(videoUrl, onProgress);
-    case 'facebook'  : return downloadFacebook(videoUrl, onProgress);
+    case 'tiktok'    : return downloadTikTok(videoUrl);
+    case 'instagram' : return downloadInstagram(videoUrl);
+    case 'facebook'  : return downloadFacebook(videoUrl);
     default          : throw new Error('Unsupported platform.');
   }
 }

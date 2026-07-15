@@ -4,13 +4,14 @@
  * ============================================
  * Developer : Md. Mainul Islam
  * Owner     : CODEX-M41NUL
- * Telegram  : t.me/mdmainulislaminfo
+ * Telegram  : https://t.me/mdmainulislaminfo
  * GitHub    : https://github.com/M41NUL
  * WhatsApp  : +8801308850528
  * Channel   : https://t.me/codexm41nul
  * Group     : https://t.me/codex_m41nul
  * Email     : devmainulislam@gmail.com
  * YouTube   : https://youtube.com/@codexm41nul
+ * License   : MIT License
  * ============================================
  */
 
@@ -31,7 +32,7 @@ const {
   welcomeText, autoDetectMenuText, autoOnText, autoOffText,
   manualModeText, manualSelectedText,
   helpText, developerText, settingsText,
-  progressBar, resultCaption, errorText, sendFailedText,
+  progressBar, resultCaption, errorText,
   escMd,
 } = require('./buttons');
 const { registerAdmin, handleBroadcast } = require('./admin');
@@ -39,7 +40,7 @@ const { registerAdmin, handleBroadcast } = require('./admin');
 // ── Validate env ──────────────────────────────────────────────────────────────
 
 if (!config.BOT_TOKEN) {
-  console.error('❌  BOT_TOKEN is not set. Exiting.');
+  console.error('BOT_TOKEN is not set. Exiting.');
   process.exit(1);
 }
 
@@ -86,6 +87,20 @@ async function safeEdit(ctx, chatId, msgId, text, extra = {}) {
     await ctx.telegram.editMessageText(chatId, msgId, undefined, text, extra);
     return true;
   } catch (_) { return false; }
+}
+
+/**
+ * Animate a progress bar by editing the status message step by step.
+ * steps: [[percent, speedLabel?], ...]
+ */
+async function animateProgress(ctx, chatId, msgId, steps, type = 'download') {
+  const { STEP_INTERVAL_MS } = config.PROGRESS;
+  for (const [pct, speed] of steps) {
+    await safeEdit(ctx, chatId, msgId, progressBar(pct, speed, type), {
+      parse_mode: 'MarkdownV2',
+    });
+    await new Promise(r => setTimeout(r, STEP_INTERVAL_MS));
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -199,7 +214,7 @@ bot.action('mode_auto', async (ctx) => {
 
 // AUTO ON
 bot.action('auto_on', async (ctx) => {
-  await ctx.answerCbQuery('⚡ Auto Detect Enabled!');
+  await ctx.answerCbQuery('Auto Detect Enabled');
   const sess        = getSession(ctx.from.id);
   sess.mode         = 'auto';
   sess.autoEnabled  = true;
@@ -207,15 +222,16 @@ bot.action('auto_on', async (ctx) => {
   try {
     await ctx.editMessageText(autoOnText(), {
       parse_mode   : 'MarkdownV2',
+      reply_markup : AUTO_ON_MENU.reply_markup,
     });
   } catch (_) {
-    await ctx.replyWithMarkdownV2(autoOnText());
+    await ctx.replyWithMarkdownV2(autoOnText(), AUTO_ON_MENU);
   }
 });
 
 // AUTO OFF
 bot.action('auto_off', async (ctx) => {
-  await ctx.answerCbQuery('🔴 Auto Detect Disabled');
+  await ctx.answerCbQuery('Auto Detect Disabled');
   const sess        = getSession(ctx.from.id);
   sess.autoEnabled  = false;
 
@@ -272,9 +288,9 @@ bot.action('mode_manual', async (ctx) => {
 // RESULT ACTION BUTTONS
 // ══════════════════════════════════════════════════════════════════════════════
 
-// 🔄 New Video — reset link data, stay in same mode
+// New Video — reset link data, stay in same mode
 bot.action('result_new', async (ctx) => {
-  await ctx.answerCbQuery('🔄 Ready for new video!');
+  await ctx.answerCbQuery('Ready for new video');
   const sess = getSession(ctx.from.id);
 
   // Delete the video message (caption has the buttons)
@@ -282,7 +298,7 @@ bot.action('result_new', async (ctx) => {
 
   if (sess.mode === 'auto') {
     // Re-show Auto ON prompt
-    await ctx.replyWithMarkdownV2(autoOnText());
+    await ctx.replyWithMarkdownV2(autoOnText(), AUTO_ON_MENU);
   } else if (sess.mode === 'manual' && sess.platform) {
     const label = sess.platform.charAt(0).toUpperCase() + sess.platform.slice(1);
     await ctx.replyWithMarkdownV2(manualSelectedText(label), MANUAL_WAITING_MENU);
@@ -294,41 +310,23 @@ bot.action('result_new', async (ctx) => {
   }
 });
 
-
+// Delete — just remove the video message, no menu reset
 bot.action('result_clear', async (ctx) => {
-  await ctx.answerCbQuery('🧹 Cleared!');
-  const sess = getSession(ctx.from.id);
-  const mode = sess.mode;
-
-  clearSession(ctx.from.id);
-
-  // Delete the video/result message
+  await ctx.answerCbQuery('Deleted');
   try { await ctx.deleteMessage(); } catch (_) {}
-
-  if (mode === 'auto') {
-    // Reload auto detect menu
-    sess.mode = 'auto';
-    await ctx.replyWithMarkdownV2(autoDetectMenuText(), AUTO_MENU);
-  } else {
-    await ctx.replyWithMarkdownV2(
-      welcomeText(ctx.from.first_name || 'there'),
-      MAIN_MENU
-    );
-  }
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
 // TEXT HANDLER — link processing
 // ══════════════════════════════════════════════════════════════════════════════
 
-bot.on('text', async (ctx) => {
+bot.on('text', async (ctx, next) => {
 
   const textRaw = ctx.message.text;
 
-  
   if (textRaw.startsWith('/')) {
-    if (textRaw === '/admin' || textRaw === '/start') return;
-    return;
+    // Let command handlers (e.g. /admin) run.
+    return next();
   }
 
   db.upsertUser(ctx.from);
@@ -347,7 +345,7 @@ bot.on('text', async (ctx) => {
     await safeDelete(ctx, chatId, userMid);
 
     const nudge = await ctx.replyWithMarkdownV2(
-      '⚠️ Please select a mode first\\.',
+      'Please select a mode first\\.',
       MAIN_MENU
     );
 
@@ -361,7 +359,7 @@ bot.on('text', async (ctx) => {
   if (!platform) {
     await safeDelete(ctx, chatId, userMid);
     const errMsg = await ctx.replyWithMarkdownV2(
-      '⚠️ *Unsupported link*\n\nPlease send a valid TikTok, Instagram, or Facebook URL\\.',
+      '*Unsupported link*\n\nPlease send a valid TikTok, Instagram, or Facebook URL\\.',
       BACK_MENU
     );
     setTimeout(() => safeDelete(ctx, chatId, errMsg.message_id), config.ERROR_AUTODELETE_MS);
@@ -372,31 +370,68 @@ bot.on('text', async (ctx) => {
   await safeDelete(ctx, chatId, userMid);
 
   // ── Step 1: Checking link ─────────────────────────────────────────────────
-  const statusMsg = await ctx.replyWithMarkdownV2('🔄 *Checking link\\.\\.\\.*');
+  const statusMsg = await ctx.replyWithMarkdownV2('*Checking link\\.\\.\\.*');
 
   await new Promise(r => setTimeout(r, 600));
   await safeEdit(ctx, chatId, statusMsg.message_id,
-    '📡 *Extracting video information\\.\\.\\.*',
+    '*Extracting video information\\.\\.\\.*',
     { parse_mode: 'MarkdownV2' }
   );
   await new Promise(r => setTimeout(r, 700));
 
-
   await safeEdit(ctx, chatId, statusMsg.message_id,
-    progressBar(0, null, 'download'),
+    progressBar(0, '0 MB/s', 'download'),
     { parse_mode: 'MarkdownV2' }
   );
 
-  // ── Download the video ──────────────────────────────────────────────────
+  const startedAt = Date.now();
+
+  // Wrap download so we can distinguish it from animation in Promise.race
+  const DOWNLOAD_DONE = Symbol('download_done');
+  const downloadPromise = download(text, sess.platform || null)
+    .then(result => ({ __tag: DOWNLOAD_DONE, result }));
+
+  // Animate bar step by step, but abort early if download resolves/rejects
+  const { STEP_INTERVAL_MS, DOWNLOAD_STEPS } = config.PROGRESS;
   let info;
-  const downloadStartedAt = Date.now();
 
   try {
-    info = await download(text, sess.platform || null, null);
+    for (const [pct, speed] of DOWNLOAD_STEPS) {
+      // Race: whichever comes first — next bar tick OR download finishing
+      const winner = await Promise.race([
+        new Promise(r => setTimeout(() => r(null), STEP_INTERVAL_MS)),
+        downloadPromise,
+      ]);
+
+      if (winner && winner.__tag === DOWNLOAD_DONE) {
+        // Download finished before this step — snap bar to 100% and break
+        info = winner.result;
+        await safeEdit(ctx, chatId, statusMsg.message_id,
+          progressBar(100, 'done', 'download'),
+          { parse_mode: 'MarkdownV2' }
+        );
+        break;
+      }
+
+      // Normal tick — update bar
+      await safeEdit(ctx, chatId, statusMsg.message_id,
+        progressBar(pct, speed, 'download'),
+        { parse_mode: 'MarkdownV2' }
+      );
+    }
+
+    if (!info) {
+      const winner = await downloadPromise;
+      info = winner.result;
+      await safeEdit(ctx, chatId, statusMsg.message_id,
+        progressBar(100, 'done', 'download'),
+        { parse_mode: 'MarkdownV2' }
+      );
+    }
+
   } catch (err) {
-    // Download failed — show error immediately
     console.error(`[Download Error] ${platform} | ${text} | ${err.message}`);
-    db.recordFailure(sess.platform || null);
+    db.recordFailure(platform);
     await safeEdit(ctx, chatId, statusMsg.message_id,
       errorText(err.message),
       { parse_mode: 'MarkdownV2' }
@@ -405,70 +440,52 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // ── Step 3: Sending video ────────────────────────────────────────────────
+  // ── Step 3: Send progress bar ─────────────────────────────────────────────
+  const sendSteps = config.PROGRESS.SEND_STEPS.map(p => [p]);
   await safeEdit(ctx, chatId, statusMsg.message_id,
     progressBar(0, null, 'send'),
     { parse_mode: 'MarkdownV2' }
   );
+  await animateProgress(ctx, chatId, statusMsg.message_id, sendSteps, 'send');
 
-  // Record stat (with how long the download took + file size, for avg-time/avg-speed stats)
-  const downloadDurationMs = Date.now() - downloadStartedAt;
-  const { existsSync: _exists, statSync: _stat } = require('fs');
-  let downloadedBytes = null;
+  // Record stat (with timing + size for the public dashboard)
+  const elapsedMs = Date.now() - startedAt;
+  let fileBytes = 0;
   try {
-    if (_exists(info.filePath)) downloadedBytes = _stat(info.filePath).size;
-  } catch (_) { /* ignore — speed just won't be recorded this time */ }
-  db.recordDownload(ctx.from.id, platform, downloadDurationMs, downloadedBytes);
+    fileBytes = require('fs').statSync(info.filePath).size;
+  } catch (_) {}
+  db.recordDownload(ctx.from.id, platform, { timeMs: elapsedMs, bytes: fileBytes });
+
+  // Delete progress message
+  await safeDelete(ctx, chatId, statusMsg.message_id);
 
   try {
-    const { existsSync, statSync } = require('fs');
-
-    if (!existsSync(info.filePath)) {
-      throw new Error('Downloaded file is missing on disk.');
-    }
-
-    const totalBytes = statSync(info.filePath).size;
-    if (totalBytes <= 0) {
-      throw new Error('Downloaded file is empty.');
-    }
-
-    // Send directly from the file path — Telegraf/Telegram handles the
-    // upload internally. Streaming through an extra PassThrough offered
-    // no benefit and could silently stall on slow connections, which is
-    // what caused "Video could not be sent" errors.
-    const { caption, truncated, fullTitle } = resultCaption(info);
-
+    const { createReadStream } = require('fs');
     await ctx.replyWithVideo(
-      { source: info.filePath, filename: 'video.mp4' },
+      { source: createReadStream(info.filePath), filename: 'video.mp4' },
       {
-        caption,
+        caption      : resultCaption(info),
         parse_mode   : 'MarkdownV2',
         reply_markup : RESULT_MENU.reply_markup,
       }
     );
-
-    // Rare case: title alone exceeded Telegram's 1024-char caption limit
-    // and had to be trimmed — send the untouched full title separately.
-    if (truncated && fullTitle) {
-      await ctx.replyWithMarkdownV2(
-        `📋 *Full Title:*\n\`${escMd(fullTitle)}\``
-      );
-    }
   } catch (sendErr) {
     console.error(`[Send Error] ${sendErr.message}`);
-    db.recordFailure(sess.platform || null);
     await ctx.replyWithMarkdownV2(
-      sendFailedText(),
+      `${resultCaption(info)}\n\n_Video could not be sent\\._`,
       { reply_markup: RESULT_MENU.reply_markup }
     );
   } finally {
-    await safeDelete(ctx, chatId, statusMsg.message_id);
     cleanupFile(info.filePath);
   }
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ADMIN
+// Register admin command handlers BEFORE the generic text handler above would
+// otherwise be fine too (Telegraf matches bot.command internally on 'text'
+// updates), but we call next() from the text handler for '/' messages so this
+// ordering is safe either way.
 // ══════════════════════════════════════════════════════════════════════════════
 
 registerAdmin(bot);
@@ -482,106 +499,74 @@ bot.catch((err, ctx) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// EXPRESS + WEBHOOK
+// EXPRESS + WEBHOOK + PUBLIC STATUS SITE
 // ══════════════════════════════════════════════════════════════════════════════
 
 const app = express();
 app.use(express.json());
+
+// Static status dashboard: public/index.html (+ any assets alongside it)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Allow other developers to call our public, read-only API endpoints
-// directly from their own websites/apps (browser fetch, etc).
-app.use(['/api/stats', '/api/endpoints'], (_req, res, next) => {
-  res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  next();
-});
-
-// ── CPU usage (%) ────────────────────────────────────────────────────────────
-// Node has no built-in "instant CPU %", so we sample process.cpuUsage() over a
-// short window each time it's requested. This reflects actual load caused by
-// this process, normalized against available cores — good enough for a status
-// gauge without adding a dependency.
-let lastCpu = { time: Date.now(), usage: process.cpuUsage() };
-
-function getCpuPercent() {
-  const now       = Date.now();
-  const usage     = process.cpuUsage(lastCpu.usage); // delta since last sample
-  const elapsedMs = now - lastCpu.time;
-  lastCpu = { time: now, usage: process.cpuUsage() };
-
-  if (elapsedMs <= 0) return 0;
-  const usedMs   = (usage.user + usage.system) / 1000;
-  const cores    = os.cpus().length || 1;
-  const percent  = (usedMs / (elapsedMs * cores)) * 100;
-  return Math.max(0, Math.min(100, Math.round(percent * 10) / 10));
-}
-
+// ── Public, read-only stats API ────────────────────────────────────────────
 app.get('/api/stats', (_req, res) => {
-  const dash   = db.getDashboardStats();
-  const memMB  = process.memoryUsage().rss / 1024 / 1024;
+  try {
+    const publicStats = db.getPublicStats();
+    const uptimeSec   = process.uptime();
 
-  res.json({
-    status        : dash.status,
-    uptime        : process.uptime(),
-    users         : dash.totalUsers,
-    downloads     : dash.totalDownloads,
-    byPlatform    : dash.byPlatform,
-    successRate   : dash.successRate,
-    memoryMB      : memMB,
-    cpuPercent    : getCpuPercent(),
-    avgTimeSec    : dash.avgTimeSec,
-    avgSpeedKbps  : dash.avgSpeedKbps,
-    version       : 'v2.1.0',
-    last7Days     : dash.last7Days,
-    recentActivity: dash.recentActivity,
-    dailyLimit    : null,
-    restarts      : dash.restarts,
-    lastDeploy    : dash.lastDeploy,
-  });
+    const memMB = process.memoryUsage().rss / 1024 / 1024;
+
+    // Approximate process CPU % over the node process lifetime.
+    const cpus = os.cpus();
+    let cpuPercent = null;
+    if (cpus && cpus.length) {
+      const usage = process.cpuUsage();
+      const totalCpuMs = (usage.user + usage.system) / 1000;
+      cpuPercent = uptimeSec > 0
+        ? Math.min(100, (totalCpuMs / (uptimeSec * 1000)) * 100)
+        : 0;
+    }
+
+    res.json({
+      status        : 'operational',
+      uptime        : uptimeSec,
+      users         : publicStats.users,
+      downloads     : publicStats.downloads,
+      byPlatform    : publicStats.byPlatform,
+      successRate   : publicStats.successRate,
+      memoryMB      : memMB,
+      cpuPercent,
+      avgTimeSec    : publicStats.avgTimeSec,
+      avgSpeedKbps  : publicStats.avgSpeedKbps,
+      version       : config.VERSION,
+      last7Days     : publicStats.last7Days,
+      recentActivity: publicStats.recentActivity,
+      dailyLimit    : null,
+      restarts      : publicStats.restarts,
+      lastDeploy    : publicStats.lastDeploy,
+    });
+  } catch (err) {
+    res.status(500).json({ status: 'degraded', error: err.message });
+  }
 });
 
-// ── Public API documentation (machine-readable) ─────────────────────────────
-// Lets other developers discover what this deployment exposes without
-// reading source code. Mirrors what's shown on the /public dashboard page.
+// ── Machine-readable endpoint list ─────────────────────────────────────────
 app.get('/api/endpoints', (_req, res) => {
-  const base = config.WEBHOOK_URL ? config.WEBHOOK_URL.replace(/\/$/, '') : '';
   res.json({
-    baseUrl: base || 'https://all-media-downloader-4o3l.onrender.com',
-    endpoints: [
+    baseUrl   : config.WEBHOOK_URL || null,
+    endpoints : [
       {
-        method     : 'GET',
-        path       : '/api/stats',
-        description: 'Public, read-only bot/server statistics — uptime, users, downloads, success rate, memory, CPU, avg download time & speed, last 7 days activity.',
-        auth       : 'none',
-        response   : {
-          status: 'string', uptime: 'number (seconds)', users: 'number',
-          downloads: 'number', byPlatform: '{ tiktok, instagram, facebook }',
-          successRate: 'number|null (percent)', memoryMB: 'number',
-          cpuPercent: 'number (percent, 0-100)', avgTimeSec: 'number|null',
-          avgSpeedKbps: 'number|null', version: 'string',
-          last7Days: '[{ label, count, avgTimeSec, successRate, percentOfWeek }]',
-          recentActivity: '[{ platform, time }]', dailyLimit: 'number|null',
-          restarts: 'number', lastDeploy: 'string|null (ISO date)',
-        },
+        method      : 'GET',
+        path        : '/api/stats',
+        description : 'Live stats: users, downloads, success rate, memory, CPU, avg time & speed, last 7 days.',
       },
       {
-        method     : 'GET',
-        path       : '/api/endpoints',
-        description: 'This documentation endpoint.',
-        auth       : 'none',
-      },
-      {
-        method     : 'POST',
-        path       : `/webhook/:BOT_TOKEN`,
-        description: 'Telegram webhook — receives updates from Telegram only. Not usable directly by third parties (requires the bot\'s private token as the path segment, which Telegram alone is configured to call).',
-        auth       : 'Telegram-only (token is part of the URL, not shared)',
+        method      : 'GET',
+        path        : '/api/endpoints',
+        description : 'This list.',
       },
     ],
-    notes: [
-      'There is currently no public media-download REST endpoint — downloads only happen through the Telegram bot itself.',
-      'All endpoints above are read-only and CORS-open; no API key required for /api/stats or /api/endpoints.',
-    ],
+    note: 'There is no public media-download REST endpoint. Downloading only works through the Telegram bot.',
   });
 });
 
@@ -600,19 +585,20 @@ async function main() {
   const webhookBase = config.WEBHOOK_URL.replace(/\/$/, '');
 
   if (!webhookBase) {
-    console.error('❌  WEBHOOK_URL is not set. Exiting.');
+    console.error('WEBHOOK_URL is not set. Exiting.');
     process.exit(1);
   }
 
   const webhookUrl = `${webhookBase}${WEBHOOK_PATH}`;
   await bot.telegram.setWebhook(webhookUrl);
-  console.log(`✅  Webhook set: ${webhookUrl}`);
+  console.log(`Webhook set: ${webhookUrl}`);
+
+  db.recordRestart();
 
   app.listen(port, () => {
-    db.recordRestart();
-    console.log(`🚀  Server running on port ${port}`);
-    console.log(`🤖  All Media Downloader is live!`);
-    console.log(`👨‍💻  Developer: Md. Mainul Islam (@mdmainulislaminfo)`);
+    console.log(`Server running on port ${port}`);
+    console.log(`All Media Downloader is live.`);
+    console.log(`Developer: Md. Mainul Islam (@mdmainulislaminfo)`);
   });
 }
 

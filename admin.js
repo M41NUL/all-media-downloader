@@ -4,13 +4,14 @@
  * ============================================
  * Developer : Md. Mainul Islam
  * Owner     : CODEX-M41NUL
- * Telegram  : t.me/mdmainulislaminfo
+ * Telegram  : https://t.me/mdmainulislaminfo
  * GitHub    : https://github.com/M41NUL
  * WhatsApp  : +8801308850528
  * Channel   : https://t.me/codexm41nul
  * Group     : https://t.me/codex_m41nul
  * Email     : devmainulislam@gmail.com
  * YouTube   : https://youtube.com/@codexm41nul
+ * License   : MIT License
  * ============================================
  */
 
@@ -19,11 +20,6 @@
 const { Markup } = require('telegraf');
 const { ADMIN_ID } = require('./config');
 const db = require('./database');
-
-// ── MarkdownV2 safe escape (inline — no dependency on buttons.js) ─────────────
-function esc(str) {
-  return String(str).replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
-}
 
 // ── Auth guard ────────────────────────────────────────────────────────────────
 function isAdmin(ctx) {
@@ -34,12 +30,12 @@ function isAdmin(ctx) {
 // ── Admin keyboard ────────────────────────────────────────────────────────────
 const ADMIN_KB = () => Markup.inlineKeyboard([
   [
-    Markup.button.callback('🔄 Refresh',   'admin_refresh'),
-    Markup.button.callback('📣 Broadcast', 'admin_broadcast'),
+    Markup.button.callback('Refresh',   'admin_refresh'),
+    Markup.button.callback('Broadcast', 'admin_broadcast'),
   ],
   [
-    Markup.button.callback('👥 User List', 'admin_users'),
-    Markup.button.callback('📊 Stats',     'admin_stats'),
+    Markup.button.callback('User List', 'admin_users'),
+    Markup.button.callback('Stats',     'admin_stats'),
   ],
 ]);
 
@@ -50,20 +46,21 @@ function buildPanelText() {
     const now = new Date().toLocaleString('en-US', { timeZone: 'Asia/Dhaka' });
 
     let msg = '';
-    msg += `🛠 Admin Panel\n`;
-    msg += `🕐 ${now} (BD)\n`;
-    msg += `${'─'.repeat(30)}\n\n`;
+    msg += `Admin Panel\n`;
+    msg += `${now} (BD)\n`;
+    msg += `${'-'.repeat(30)}\n\n`;
 
-    msg += `📊 STATISTICS\n`;
-    msg += `👥 Total Users     : ${s.totalUsers}\n`;
-    msg += `📥 Total Downloads : ${s.totalDownloads}\n\n`;
+    msg += `STATISTICS\n`;
+    msg += `Total Users     : ${s.totalUsers}\n`;
+    msg += `Total Downloads : ${s.totalDownloads}\n`;
+    msg += `Restarts        : ${s.restarts}\n\n`;
 
-    msg += `🎵 TikTok    : ${s.tiktok}\n`;
-    msg += `📸 Instagram : ${s.instagram}\n`;
-    msg += `📘 Facebook  : ${s.facebook}\n`;
-    msg += `${'─'.repeat(30)}\n\n`;
+    msg += `TikTok    : ${s.tiktok}\n`;
+    msg += `Instagram : ${s.instagram}\n`;
+    msg += `Facebook  : ${s.facebook}\n`;
+    msg += `${'-'.repeat(30)}\n\n`;
 
-    msg += `👤 RECENT USERS (last 15)\n`;
+    msg += `RECENT USERS (last 15)\n`;
     const userList = Object.values(s.users)
       .sort((a, b) => new Date(b.joinedAt) - new Date(a.joinedAt))
       .slice(0, 15);
@@ -73,7 +70,7 @@ function buildPanelText() {
     } else {
       userList.forEach((u, i) => {
         const name = u.username ? `@${u.username}` : u.firstName || 'Unknown';
-        msg += `  ${i + 1}. ${name} — ${u.downloads} DL\n`;
+        msg += `  ${i + 1}. ${name} - ${u.downloads} DL\n`;
       });
     }
 
@@ -83,7 +80,7 @@ function buildPanelText() {
 
     return msg;
   } catch (err) {
-    return `🛠 Admin Panel\n\n❌ Error building panel: ${err.message}`;
+    return `Admin Panel\n\nError building panel: ${err.message}`;
   }
 }
 
@@ -99,14 +96,14 @@ function registerAdmin(bot) {
 
     if (!ADMIN_ID) {
       return ctx.reply(
-        '⚠️ ADMIN_ID is not configured.\n\n' +
+        'ADMIN_ID is not configured.\n\n' +
         'Set the ADMIN_ID environment variable in Render to your Telegram numeric ID.\n' +
         'Get your ID from @userinfobot'
       );
     }
 
     if (!isAdmin(ctx)) {
-      return ctx.reply(`⛔ Access denied.\n\nYour ID: ${ctx.from?.id}`);
+      return ctx.reply(`Access denied.\n\nYour ID: ${ctx.from?.id}`);
     }
 
     try {
@@ -114,63 +111,64 @@ function registerAdmin(bot) {
       await ctx.reply(panel, ADMIN_KB());
     } catch (err) {
       console.error('[Admin] Error sending panel:', err);
-      await ctx.reply(`❌ Admin panel error: ${err.message}`);
+      await ctx.reply(`Admin panel error: ${err.message}`);
     }
   });
 
   // Refresh
   bot.action('admin_refresh', async (ctx) => {
-    if (!isAdmin(ctx)) return ctx.answerCbQuery('⛔ Not authorised.');
+    if (!isAdmin(ctx)) return ctx.answerCbQuery('Not authorised.');
     try {
-      await ctx.answerCbQuery('✅ Refreshed!');
+      await ctx.answerCbQuery('Refreshed');
       const panel = buildPanelText();
       await ctx.editMessageText(panel, { reply_markup: ADMIN_KB().reply_markup });
     } catch (err) {
       console.error('[Admin] Refresh error:', err.message);
-      await ctx.answerCbQuery('❌ Refresh failed');
+      await ctx.answerCbQuery('Refresh failed');
     }
   });
 
   // Stats only
   bot.action('admin_stats', async (ctx) => {
-    if (!isAdmin(ctx)) return ctx.answerCbQuery('⛔ Not authorised.');
+    if (!isAdmin(ctx)) return ctx.answerCbQuery('Not authorised.');
     try {
       await ctx.answerCbQuery();
       const s = db.getStats();
       const text =
-        `📊 Download Stats\n\n` +
-        `📥 Total : ${s.totalDownloads}\n` +
-        `🎵 TikTok : ${s.tiktok}\n` +
-        `📸 Instagram : ${s.instagram}\n` +
-        `📘 Facebook : ${s.facebook}`;
-      await ctx.reply(text, Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'admin_back')]]));
+        `Download Stats\n\n` +
+        `Total     : ${s.totalDownloads}\n` +
+        `Failed    : ${s.failed}\n` +
+        `TikTok    : ${s.tiktok}\n` +
+        `Instagram : ${s.instagram}\n` +
+        `Facebook  : ${s.facebook}`;
+      await ctx.reply(text, Markup.inlineKeyboard([[Markup.button.callback('Back', 'admin_back')]]));
     } catch (err) {
-      await ctx.answerCbQuery('❌ Error');
+      await ctx.answerCbQuery('Error');
     }
   });
 
   // Full user list
   bot.action('admin_users', async (ctx) => {
-    if (!isAdmin(ctx)) return ctx.answerCbQuery('⛔ Not authorised.');
+    if (!isAdmin(ctx)) return ctx.answerCbQuery('Not authorised.');
     try {
       await ctx.answerCbQuery();
       const s = db.getStats();
       const users = Object.values(s.users);
-      let text = `👥 All Users (${users.length} total)\n${'─'.repeat(28)}\n`;
+      let text = `All Users (${users.length} total)\n${'-'.repeat(28)}\n`;
       users.slice(0, 50).forEach((u, i) => {
         const name = u.username ? `@${u.username}` : u.firstName || 'Unknown';
-        text += `${i + 1}. ${name} — ${u.downloads} DL\n`;
+        text += `${i + 1}. ${name} - ${u.downloads} DL\n`;
       });
       if (users.length > 50) text += `\n... and ${users.length - 50} more`;
-      await ctx.reply(text, Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'admin_back')]]));
+      await ctx.reply(text, Markup.inlineKeyboard([[Markup.button.callback('Back', 'admin_back')]]));
     } catch (err) {
-      await ctx.answerCbQuery('❌ Error');
+      await ctx.answerCbQuery('Error');
     }
   });
 
   // Back to main panel
   bot.action('admin_back', async (ctx) => {
-    if (!isAdmin(ctx)) return ctx.answerCbQuery('⛔ Not authorised.');
+    if (!isAdmin(ctx)) return ctx.answerCbQuery('Not authorised.');
     try {
       await ctx.answerCbQuery();
       const panel = buildPanelText();
@@ -180,11 +178,11 @@ function registerAdmin(bot) {
 
   // Broadcast prompt
   bot.action('admin_broadcast', async (ctx) => {
-    if (!isAdmin(ctx)) return ctx.answerCbQuery('⛔ Not authorised.');
+    if (!isAdmin(ctx)) return ctx.answerCbQuery('Not authorised.');
     await ctx.answerCbQuery();
     broadcastState.set(String(ctx.from.id), true);
     await ctx.reply(
-      '📣 Broadcast Mode\n\n' +
+      'Broadcast Mode\n\n' +
       'Send the message you want to broadcast to ALL users.\n' +
       'Send /cancel to cancel.'
     );
@@ -201,7 +199,7 @@ async function handleBroadcast(ctx, bot) {
   // Allow cancel
   if (text === '/cancel') {
     broadcastState.delete(uid);
-    await ctx.reply('❌ Broadcast cancelled.');
+    await ctx.reply('Broadcast cancelled.');
     return true;
   }
 
@@ -211,11 +209,11 @@ async function handleBroadcast(ctx, bot) {
   const users = db.getAllUsers();
   let sent = 0, failed = 0;
 
-  const statusMsg = await ctx.reply(`📣 Broadcasting to ${users.length} users…\nPlease wait.`);
+  const statusMsg = await ctx.reply(`Broadcasting to ${users.length} users...\nPlease wait.`);
 
   for (const user of users) {
     try {
-      await bot.telegram.sendMessage(user.id, `📢 Message from Admin:\n\n${text}`);
+      await bot.telegram.sendMessage(user.id, `Message from Admin:\n\n${text}`);
       sent++;
     } catch (_) {
       failed++;
@@ -229,10 +227,10 @@ async function handleBroadcast(ctx, bot) {
       ctx.chat.id,
       statusMsg.message_id,
       undefined,
-      `✅ Broadcast Complete!\n\n📤 Sent    : ${sent}\n❌ Failed  : ${failed}\n👥 Total   : ${users.length}`
+      `Broadcast Complete\n\nSent    : ${sent}\nFailed  : ${failed}\nTotal   : ${users.length}`
     );
   } catch (_) {
-    await ctx.reply(`✅ Done! Sent: ${sent} | Failed: ${failed}`);
+    await ctx.reply(`Done. Sent: ${sent} | Failed: ${failed}`);
   }
 
   return true;
