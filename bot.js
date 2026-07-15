@@ -20,6 +20,7 @@
 const express      = require('express');
 const path         = require('path');
 const os           = require('os');
+const https        = require('https');
 const { Telegraf } = require('telegraf');
 
 const config   = require('./config');
@@ -46,7 +47,18 @@ if (!config.BOT_TOKEN) {
 
 // ── Bot instance ──────────────────────────────────────────────────────────────
 
-const bot = new Telegraf(config.BOT_TOKEN);
+// keepAlive + generous timeout agent — reduces "socket hang up" errors on
+// slow/free-tier hosts when uploading larger video files to Telegram.
+const telegramAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 10000,
+  timeout: 120000, // 120s socket timeout
+});
+
+const bot = new Telegraf(config.BOT_TOKEN, {
+  telegram: { agent: telegramAgent },
+  handlerTimeout: 180000, // allow slow download+send handlers up to 180s
+});
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SESSION
@@ -461,20 +473,38 @@ bot.on('text', async (ctx, next) => {
 
   try {
     const { createReadStream } = require('fs');
-    await ctx.replyWithVideo(
-      { source: createReadStream(info.filePath), filename: 'video.mp4' },
-      {
-        caption      : resultCaption(info),
-        parse_mode   : 'MarkdownV2',
-        reply_markup : RESULT_MENU.reply_markup,
+    const MAX_SEND_ATTEMPTS = 3;
+    let lastErr = null;
+
+    for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
+      try {
+        await ctx.replyWithVideo(
+          // re-create the stream each attempt — a stream can only be read once
+          { source: createReadStream(info.filePath), filename: 'video.mp4' },
+          {
+            caption      : resultCaption(info),
+            parse_mode   : 'MarkdownV2',
+            reply_markup : RESULT_MENU.reply_markup,
+          }
+        );
+        lastErr = null;
+        break; // success
+      } catch (sendErr) {
+        lastErr = sendErr;
+        const transient = /socket hang up|ETIMEDOUT|ECONNRESET|timed out/i.test(sendErr.message || '');
+        console.error(`[Send Error] attempt ${attempt}/${MAX_SEND_ATTEMPTS} | ${sendErr.message}`);
+        if (!transient || attempt === MAX_SEND_ATTEMPTS) break;
+        // exponential backoff: 2s, 4s
+        await new Promise(r => setTimeout(r, attempt * 2000));
       }
-    );
-  } catch (sendErr) {
-    console.error(`[Send Error] ${sendErr.message}`);
-    await ctx.replyWithMarkdownV2(
-      `${resultCaption(info)}\n\n_Video could not be sent\\._`,
-      { reply_markup: RESULT_MENU.reply_markup }
-    );
+    }
+
+    if (lastErr) {
+      await ctx.replyWithMarkdownV2(
+        `${resultCaption(info)}\n\n_Video could not be sent\\._`,
+        { reply_markup: RESULT_MENU.reply_markup }
+      );
+    }
   } finally {
     cleanupFile(info.filePath);
   }
