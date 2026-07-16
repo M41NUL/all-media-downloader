@@ -3,6 +3,7 @@ Telegram bot handlers: /start command and incoming link messages.
 """
 
 import logging
+import re
 
 from telegram import Update
 from telegram.constants import ChatAction
@@ -60,11 +61,28 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 # are never cut.
 TELEGRAM_CAPTION_LIMIT = 1024
 
+# We use MarkdownV2 (not legacy Markdown) so the caption text can be wrapped
+# in a ``` code block ``` — tapping/holding a code block in Telegram copies
+# it to the clipboard, which is what gives the "tap caption to copy" effect.
+# MarkdownV2 requires ALL of these reserved characters to be escaped outside
+# of code blocks, or Telegram throws "Can't parse entities" and the whole
+# send fails (this was the root cause of earlier silent failures too).
+_MDV2_SPECIAL_CHARS = set(r"_*[]()~`>#+-=|{}.!\\")
+
+
+def _escape_mdv2(text: str) -> str:
+    return "".join("\\" + ch if ch in _MDV2_SPECIAL_CHARS else ch for ch in text)
+
+
+def _escape_mdv2_code(text: str) -> str:
+    # Inside a ``` code block, only backtick and backslash need escaping.
+    return text.replace("\\", "\\\\").replace("`", "\\`")
+
 
 def _build_caption(result: dict) -> str:
-    platform = str(result.get("platform", "unknown")).title()
-    size = result.get("size", "unknown")
-    duration = result.get("duration", "unknown")
+    platform = _escape_mdv2(str(result.get("platform", "unknown")).title())
+    size = _escape_mdv2(str(result.get("size", "unknown")))
+    duration = _escape_mdv2(str(result.get("duration", "unknown")))
     raw_caption = (result.get("caption") or "").strip()
 
     meta = (
@@ -76,18 +94,22 @@ def _build_caption(result: dict) -> str:
     if not raw_caption:
         return meta
 
-    header = "📝 *Caption:*\n"
-    full = f"{header}{raw_caption}\n\n{meta}"
+    header = "📝 *Caption* \\(tap to copy\\):\n"
+
+    def wrap(text: str) -> str:
+        return f"{header}```\n{_escape_mdv2_code(text)}\n```\n\n{meta}"
+
+    full = wrap(raw_caption)
 
     if len(full) <= TELEGRAM_CAPTION_LIMIT:
         return full
 
     # Only the caption text is shortened, and only when Telegram's own
     # limit forces it — platform/size/duration always stay intact.
-    room = TELEGRAM_CAPTION_LIMIT - len(header) - len(meta) - len("\n\n") - 1
-    room = max(room, 0)
+    fixed_len = len(wrap(""))
+    room = max(TELEGRAM_CAPTION_LIMIT - fixed_len - 1, 0)
     trimmed = raw_caption[:room].rstrip() + "…" if room < len(raw_caption) else raw_caption
-    return f"{header}{trimmed}\n\n{meta}"
+    return wrap(trimmed)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -138,12 +160,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         caption = _build_caption(result)
 
         with open(tmp_path, "rb") as video_file:
-            await message.reply_video(
-                video=video_file,
-                caption=caption,
-                parse_mode="Markdown",
-                supports_streaming=True,
-            )
+            try:
+                await message.reply_video(
+                    video=video_file,
+                    caption=caption,
+                    parse_mode="MarkdownV2",
+                    supports_streaming=True,
+                )
+            except Exception as md_exc:
+                logger.warning(
+                    "MarkdownV2 caption send failed (%s), retrying as plain text", md_exc
+                )
+                video_file.seek(0)
+                # Strip MarkdownV2 escaping/formatting chars for a safe plain fallback.
+                plain_caption = re.sub(r"\\([_*\[\]()~`>#+\-=|{}.!])", r"\1", caption)
+                plain_caption = plain_caption.replace("```", "").replace("*", "")
+                await message.reply_video(
+                    video=video_file,
+                    caption=plain_caption,
+                    supports_streaming=True,
+                )
 
         await status_message.delete()
 
@@ -154,10 +190,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await status_message.edit_text(f"❌ {exc}")
     except VideoDownloadError as exc:
         await status_message.edit_text(f"❌ {exc}")
-    except Exception:
-        logger.exception("Unexpected error while sending video")
+    except Exception as exc:
+        logger.exception(
+            "Unexpected error while sending video (platform=%s, url=%s): %s",
+            result.get("platform", "unknown"),
+            video_url,
+            exc,
+        )
         await status_message.edit_text(
-            "❌ An unexpected error occurred while sending the video. Please try again."
+            f"❌ An unexpected error occurred while sending the video.\n\nDetail: {exc}\n\nPlease try again."
         )
     finally:
         if tmp_path:
