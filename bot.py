@@ -10,6 +10,7 @@ $PORT in a background thread. Point an UptimeRobot HTTP(s) monitor at
 the service URL (e.g. every 5 minutes) to stop it from sleeping.
 """
 
+import asyncio
 import logging
 import os
 import sys
@@ -64,6 +65,11 @@ def main() -> None:
     # Start the Flask keep-alive server in a background thread so Render
     # sees an open port immediately, while the bot polls in the main thread.
     threading.Thread(target=run_keepalive_server, daemon=True).start()
+
+    # Explicitly create/set an event loop on the main thread. Newer Python
+    # versions no longer auto-create one, which run_polling() relies on.
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     application = Application.builder().token(BOT_TOKEN).build()
 
