@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: all-media-downloader-bot
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: API_KEY
+        value: m41nul
+      - key: API_BASE_URL
+        value: https://all-media-downloader-api.onrender.com
