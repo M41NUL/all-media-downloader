@@ -15,8 +15,10 @@ import logging
 import os
 import sys
 import threading
+import time
 
 from flask import Flask
+from telegram.error import Conflict
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -81,7 +83,42 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     logger.info("All Media Downloader bot starting...")
-    application.run_polling(allowed_updates=["message"])
+
+    # If another instance (e.g. a previous deploy still shutting down, or a
+    # duplicate service accidentally running elsewhere) is polling with the
+    # same BOT_TOKEN, Telegram raises Conflict and python-telegram-bot lets
+    # run_polling() crash outright — which on Render just triggers an
+    # auto-restart into the same Conflict, over and over. drop_pending_updates
+    # clears any stale getUpdates session on our own start, and the retry
+    # loop below absorbs a transient Conflict (e.g. the old instance hasn't
+    # finished shutting down yet) instead of crash-looping.
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            application.run_polling(
+                allowed_updates=["message", "callback_query"],
+                drop_pending_updates=True,
+            )
+            break
+        except Conflict:
+            if attempt == max_attempts:
+                logger.error(
+                    "Another bot instance is running with the same BOT_TOKEN "
+                    "and would not yield after %d attempts. Only one instance "
+                    "can poll at a time — stop the other deployment/service "
+                    "using this token.",
+                    max_attempts,
+                )
+                raise
+            wait_seconds = min(5 * attempt, 20)
+            logger.warning(
+                "Conflict: another instance is polling with this BOT_TOKEN "
+                "(attempt %d/%d). Retrying in %ds...",
+                attempt,
+                max_attempts,
+                wait_seconds,
+            )
+            time.sleep(wait_seconds)
 
 
 if __name__ == "__main__":

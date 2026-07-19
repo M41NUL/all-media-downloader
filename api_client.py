@@ -64,4 +64,7 @@ def fetch_video_info(url: str) -> dict:
         "video_url": data.get("video_url"),
         "thumbnail_url": data.get("thumbnail_url"),
         "quality": data.get("quality", "unknown"),
+        # Present for TikTok — carries yt-dlp's exact resolved headers on
+        # the API side so the proxy can fetch with them instead of guessing.
+        "proxy_token": data.get("proxy_token"),
     }

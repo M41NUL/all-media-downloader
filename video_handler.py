@@ -58,27 +58,31 @@ def _headers_for(video_url: str, platform: str = "") -> dict:
     return BASE_HEADERS
 
 
-def _resolve_download_url(video_url: str, platform: str) -> tuple:
+def _resolve_download_url(video_url: str, platform: str, proxy_token: str = "") -> tuple:
     """
     Returns (url_to_fetch, headers, params) for the actual HTTP GET.
 
-    TikTok's signed CDN urls commonly reject fetches from a client other
-    than the one that resolved them via yt-dlp (this bot != the API
-    server). Routing through the API's proxy endpoint keeps the fetch on
-    the API server itself, avoiding that mismatch. Other platforms are
-    less strict and are still fetched directly.
+    For TikTok, the API server actually downloads the video file to local
+    disk at resolve time (TikTok's CDN rejects fetches for its signed urls
+    from any process other than the one that resolved them — this was
+    confirmed even when passing yt-dlp's own resolved headers along). The
+    proxy_token here just references that already-downloaded file; the
+    proxy endpoint streams it directly, no CDN url is fetched a second time.
     """
     platform_key = (platform or "").lower()
     if platform_key == "tiktok" or "tiktok" in video_url.lower():
-        return (
-            PROXY_VIDEO_ENDPOINT,
-            {"x-api-key": API_KEY},
-            {"video_url": video_url, "platform": "tiktok"},
-        )
+        params = {"platform": "tiktok"}
+        if proxy_token:
+            params["proxy_token"] = proxy_token
+        else:
+            params["video_url"] = video_url
+        return (PROXY_VIDEO_ENDPOINT, {"x-api-key": API_KEY}, params)
     return (video_url, _headers_for(video_url, platform), None)
 
 
-def download_video(video_url: str, suffix: str = ".mp4", platform: str = "") -> str:
+def download_video(
+    video_url: str, suffix: str = ".mp4", platform: str = "", proxy_token: str = ""
+) -> str:
     """
     Stream-download the video at video_url to a temp file.
 
@@ -90,7 +94,7 @@ def download_video(video_url: str, suffix: str = ".mp4", platform: str = "") -> 
     tmp_fd, tmp_path = tempfile.mkstemp(suffix=suffix)
     os.close(tmp_fd)
 
-    fetch_url, headers, params = _resolve_download_url(video_url, platform)
+    fetch_url, headers, params = _resolve_download_url(video_url, platform, proxy_token)
 
     try:
         with requests.get(

@@ -79,16 +79,27 @@ def _escape_mdv2_code(text: str) -> str:
     return text.replace("\\", "\\\\").replace("`", "\\`")
 
 
+_PLATFORM_EMOJI = {
+    "tiktok": "🎵",
+    "instagram": "📸",
+    "facebook": "📘",
+}
+
+
 def _build_caption(result: dict) -> str:
-    platform = _escape_mdv2(str(result.get("platform", "unknown")).title())
+    platform_name = str(result.get("platform", "unknown")).title()
+    platform_key = str(result.get("platform", "")).lower()
+    platform_emoji = _PLATFORM_EMOJI.get(platform_key, "🌐")
+
+    platform = _escape_mdv2(platform_name)
     size = _escape_mdv2(str(result.get("size", "unknown")))
     duration = _escape_mdv2(str(result.get("duration", "unknown")))
     raw_caption = (result.get("caption") or "").strip()
 
     meta = (
-        f"📹 *Platform:* {platform}\n"
-        f"📦 *Size:* {size}\n"
-        f"⏱ *Duration:* {duration}"
+        f"{platform_emoji} *Platform:* {platform}\n"
+        f"🗂️ *Size:* {size}\n"
+        f"⏱️ *Duration:* {duration}"
     )
 
     if not raw_caption:
@@ -156,7 +167,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     tmp_path = None
     try:
-        tmp_path = download_video(video_url, platform=result.get("platform", ""))
+        tmp_path = download_video(
+            video_url,
+            platform=result.get("platform", ""),
+            proxy_token=result.get("proxy_token") or "",
+        )
 
         caption = _build_caption(result)
 
